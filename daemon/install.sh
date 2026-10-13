@@ -11,6 +11,16 @@ CHAT=$(plutil -extract chatId raw -o - "$SRC_CONF")
 ( umask 077; printf 'TOKEN=%s\nCHAT=%s\n' "$TOKEN" "$CHAT" > /etc/macsentry.conf )
 chown root:wheel /etc/macsentry.conf; chmod 600 /etc/macsentry.conf
 
+# Máy chủ tin cậy: shell kết nối tới đây không bị coi là reverse shell (chỉ ghi log). Không ghi đè nếu đã có.
+if [ ! -e /etc/macsentry.trusted ]; then
+  cat > /etc/macsentry.trusted <<'TRUSTED'
+# Máy chủ tin cậy của MacSentry — mỗi dòng "tên-miền:cổng" (hoặc "tên-miền" = mọi cổng).
+# Shell/netcat kết nối tới đây sẽ chỉ được ghi log, không gửi cảnh báo reverse shell.
+# Sửa: sudo nano /etc/macsentry.trusted (daemon tự đọc lại sau ~1 phút)
+TRUSTED
+  chown root:wheel /etc/macsentry.trusted; chmod 644 /etc/macsentry.trusted
+fi
+
 mkdir -p /usr/local/libexec /var/db/macsentry
 install -o root -g wheel -m 755 macsentryd.sh /usr/local/libexec/macsentryd
 chmod 700 /var/db/macsentry

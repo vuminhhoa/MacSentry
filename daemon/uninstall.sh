@@ -4,6 +4,6 @@ set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "Cần quyền root: sudo $0"; exit 1; }
 LABEL=io.github.vuminhhoa.macsentry.daemon
 launchctl bootout system/$LABEL 2>/dev/null || true
-rm -f /Library/LaunchDaemons/$LABEL.plist /usr/local/libexec/macsentryd /etc/macsentry.conf
+rm -f /Library/LaunchDaemons/$LABEL.plist /usr/local/libexec/macsentryd /etc/macsentry.conf /etc/macsentry.trusted
 rm -rf /var/db/macsentry
 echo "Đã gỡ macsentryd (log vẫn còn ở /var/log/macsentry.log)"

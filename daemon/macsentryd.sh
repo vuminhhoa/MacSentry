@@ -83,6 +83,67 @@ hash_changes() {
 }
 copy_of() { echo "$STATE/files/$(printf '%s' "$1" | tr '/' '_')"; }
 
+# ---------------------------------------------------------------- chi tiết để phân biệt cảnh báo thật / giả
+
+# Chữ ký số của file thực thi / app: Apple, nhà phát hành (Team ID), hay không ký
+sig_of() {
+  [ -e "$1" ] || { echo "? (không tìm thấy file)"; return; }
+  out=$(codesign -dv --verbose=2 "$1" 2>&1)
+  case $out in *"not signed"*) echo "⚠️ KHÔNG có chữ ký số"; return ;; esac
+  auth=$(printf '%s\n' "$out" | sed -n 's/^Authority=//p' | head -1)
+  team=$(printf '%s\n' "$out" | sed -n 's/^TeamIdentifier=//p' | grep -v 'not set')
+  case $auth in
+    "Software Signing"|"macOS Software Signing") echo "✅ Apple (thành phần hệ thống)" ;;
+    "") echo "⚠️ ký ad-hoc (không rõ nhà phát hành)" ;;
+    *) case $auth in *"($team)"*) echo "$auth" ;; *) echo "$auth${team:+ (Team $team)}" ;; esac ;;
+  esac
+}
+
+# Mô tả tiến trình: dòng lệnh, user, thời điểm chạy, chuỗi tiến trình cha, chữ ký số
+proc_info() {
+  p=$1
+  cmd=$(ps -o command= -p "$p" 2>/dev/null | cut -c1-300)
+  [ -n "$cmd" ] || { echo "(tiến trình $p đã kết thúc trước khi kịp ghi chi tiết)"; return; }
+  # đường dẫn file thực thi = mục "txt" đầu tiên (ps chỉ cho tên, vd "bash")
+  exe=$(lsof -nP -p "$p" -a -d txt -Fn 2>/dev/null | awk '/^n/ { print substr($0, 2); exit }')
+  chain=""; q=$(ps -o ppid= -p "$p" 2>/dev/null | tr -d ' '); i=0
+  while [ -n "$q" ] && [ "$q" -gt 1 ] && [ $i -lt 6 ]; do
+    n=$(ps -o comm= -p "$q" 2>/dev/null | sed 's|.*/||'); [ -n "$n" ] || break
+    chain="$chain ← $n($q)"; q=$(ps -o ppid= -p "$q" 2>/dev/null | tr -d ' '); i=$((i + 1))
+  done
+  printf 'Lệnh: %s\nUser: %s | Chạy từ: %s\nTiến trình cha:%s\nFile chạy: %s' "$cmd" \
+    "$(ps -o user= -p "$p" | tr -d ' ')" "$(ps -o lstart= -p "$p")" "${chain:- launchd}" "${exe:-?} — $(sig_of "$exe")"
+}
+
+# Thông tin IP: tên miền (reverse DNS) và chủ sở hữu (whois) — có thể mất vài giây, gọi trong tiến trình nền
+ip_info() {
+  ip=$1
+  case $ip in 10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*|fe80:*|fd*)
+    echo "IP mạng nội bộ / Tailscale"; return ;; esac
+  name=$(host -W 2 "$ip" 2>/dev/null | awk '/domain name pointer/ { sub(/\.$/, "", $NF); print $NF; exit }')
+  org=$(whois "$ip" 2>/dev/null | awk -F': *' 'tolower($1) ~ /^(orgname|org-name|descr|netname)$/ && !o { o = $2 }
+                                               tolower($1) == "country" && !c { c = $2 } END { print o (c ? ", " c : "") }')
+  echo "Tên miền: ${name:-không có} | Chủ IP: ${org:-không rõ}"
+}
+
+# Máy chủ tin cậy (/etc/macsentry.trusted, dạng "tên-miền:cổng" hoặc "tên-miền"): phân giải thành "ip:cổng tên"
+TRUSTED=${TRUSTED:-/etc/macsentry.trusted}
+resolve_trusted() {
+  sed 's/#.*//' "$TRUSTED" 2>/dev/null | while read -r entry; do
+    [ -n "$entry" ] || continue
+    h=${entry%%:*}; port=${entry#*:}; [ "$port" = "$entry" ] && port="*"
+    ips=$(dscacheutil -q host -a name "$h" 2>/dev/null | awk '/_address:/ { print $2 }')
+    [ -n "$ips" ] || ips=$h
+    for ip in $ips; do echo "$ip:$port $h"; done
+  done > "$STATE/trusted_resolved"
+}
+# $1 = "ip:cổng" → in tên máy chủ nếu tin cậy
+trusted_name() {
+  ip=${1%:*}; ip=${ip#[}; ip=${ip%]}; port=${1##*:}
+  awk -v ip="$ip" -v port="$port" '{ split($1, a, ":"); p = a[length(a)]; sub(":[^:]*$", "", $1)
+       if ($1 == ip && (p == port || p == "*")) { print $2; exit } }' "$STATE/trusted_resolved" 2>/dev/null
+}
+
 # ---------------------------------------------------------------- 1. khởi động / tắt máy
 
 boot=$(sysctl -n kern.boottime | sed 's/^{ sec = \([0-9]*\).*/\1/')
@@ -164,6 +225,7 @@ $msg" ;;
 }
 auth_watch &
 AUTH_PID=$!
+resolve_trusted
 
 # ---------------------------------------------------------------- 3. kết nối truy cập từ xa (mỗi 2 giây)
 
@@ -181,7 +243,8 @@ Lúc: $(now)"
       case $ip in
         127.*|::1|localhost) info "$msg
 (từ chính máy này)" ;;
-        *) if throttle "conn_${p}_$ip" 300; then alert "$msg"
+        *) if throttle "conn_${p}_$ip" 300; then ( alert "$msg
+$(ip_info "$ip")" ) &
            else log "$msg (lặp lại trong 5 phút, không gửi)"; fi ;;
       esac
     else
@@ -212,7 +275,8 @@ check_system() {
       prog=$(plutil -extract Program raw -o - "$path" 2>/dev/null || plutil -extract ProgramArguments.0 raw -o - "$path" 2>/dev/null)
       alert "🧩 Có chương trình tự khởi động mới
 File: $path
-Chạy: ${prog:-?}"
+Chạy: ${prog:-?}
+Chữ ký: $(sig_of "$prog")"
     else info "🧩 Đã gỡ chương trình tự khởi động
 File: $path"; fi
   done
@@ -238,15 +302,6 @@ File: $path"; fi
     [ "$sign" = "+" ] && { [ "$v" = "TẮT" ] && alert "🛂 Gatekeeper vừa bị TẮT (cho chạy app không rõ nguồn gốc)" || info "🛂 Gatekeeper đã bật"; }
   done
 
-  # Nghi reverse shell: shell / netcat / thông dịch script giữ kết nối TCP ra ngoài
-  rs=$(lsof -nP -iTCP -sTCP:ESTABLISHED -F pcn 2>/dev/null | awk '/^p/ { p = substr($0, 2) } /^c/ { c = substr($0, 2) } /^n/ {
-         split(substr($0, 2), a, "->"); r = a[2]; if (r == "" || r ~ /^(127\.|\[::1\]|localhost)/) next
-         if (c ~ /^(bash|sh|zsh|dash|ksh|tcsh|csh|fish|nc|ncat|netcat|socat|telnet)$/) print c " (pid " p ") -> " r }' | sort -u)
-  diff_state revshell "$rs" | while read -r sign rest; do
-    [ "$sign" = "+" ] && alert "☠️ Nghi REVERSE SHELL: $rest
-(shell/netcat đang giữ kết nối mạng — nếu không phải bạn: ngắt mạng và kiểm tra ngay)"
-  done
-
   # App MacSentry phải luôn chạy khi có người đăng nhập (vắng ~30s liên tục → có thể đã bị gỡ)
   console=$(stat -f %Su /dev/console)
   if [ "$console" != root ] && ! pgrep -x MacSentry >/dev/null; then
@@ -266,15 +321,38 @@ Có thể đã bị gỡ LaunchAgent hoặc xoá app"
   done
 }
 
+# Nghi reverse shell (mỗi 4 giây): shell / netcat giữ kết nối TCP ra ngoài.
+# Ghi chi tiết tiến trình NGAY (tiến trình có thể kết thúc sau vài giây), tra IP trong tiến trình nền.
+check_revshell() {
+  rs=$(lsof -nP -iTCP -sTCP:ESTABLISHED -F pcn 2>/dev/null | awk '/^p/ { p = substr($0, 2) } /^c/ { c = substr($0, 2) } /^n/ {
+         split(substr($0, 2), a, "->"); r = a[2]; if (r == "" || r ~ /^(127\.|\[::1\]|localhost)/) next
+         if (c ~ /^(bash|sh|zsh|dash|ksh|tcsh|csh|fish|nc|ncat|netcat|socat|telnet)$/) print c, p, r }' | sort -u)
+  diff_state revshell "$rs" | while read -r sign c p r; do
+    [ "$sign" = "+" ] || continue
+    detail=$(proc_info "$p")
+    ip=${r%:*}; ip=${ip#[}; ip=${ip%]}
+    tn=$(trusted_name "$r")
+    if [ -n "$tn" ]; then
+      log "☑️ $c (pid $p) -> $r — máy chủ tin cậy $tn, không cảnh báo. $detail"
+      continue
+    fi
+    ( alert "☠️ Nghi REVERSE SHELL: $c (pid $p) -> $r
+$(ip_info "$ip")
+$detail
+— Nếu đích là máy chủ quen (git, công ty...) và tiến trình cha là IDE/công cụ của bạn → báo giả, thêm vào /etc/macsentry.trusted.
+— Nếu không nhận ra: ngắt mạng và kiểm tra ngay." ) &
+  done
+}
+
 # Cổng mới mở ra mạng (mỗi 30 giây). Chỉ báo lần đầu thấy mỗi cặp (chương trình, cổng) để tránh ồn.
 # Cổng tạm (>= 49152, hệ điều hành cấp ngẫu nhiên — vd remoted, rapportd) tính chung: mỗi chương trình báo 1 lần.
 check_listen() {
-  cur=$(lsof +c 0 -nP -iTCP -sTCP:LISTEN -F cn 2>/dev/null |
-        awk '/^c/ { c=substr($0,2) } /^n/ { name=substr($0,2); if (name ~ /^(127\.|\[::1\]|localhost)/) next
-                                           n=split(name,a,":"); print c"|"a[n] }' | sort -u)
+  cur=$(lsof +c 0 -nP -iTCP -sTCP:LISTEN -F pcn 2>/dev/null |
+        awk '/^p/ { p=substr($0,2) } /^c/ { c=substr($0,2) } /^n/ { name=substr($0,2); if (name ~ /^(127\.|\[::1\]|localhost)/) next
+                                           n=split(name,a,":"); print c"|"a[n]"|"p }' | sort -t'|' -k1,2 -u)
   seen="$STATE/listen_seen"
-  if [ ! -f "$seen" ]; then printf '%s\n' "$cur" > "$seen"; return; fi
-  printf '%s\n' "$cur" | while IFS='|' read -r cmd port; do
+  if [ ! -f "$seen" ]; then printf '%s\n' "$cur" | cut -d'|' -f1,2 > "$seen"; return; fi
+  printf '%s\n' "$cur" | while IFS='|' read -r cmd port pid; do
     [ -n "$cmd" ] || continue
     if [ "$port" -ge 49152 ] 2>/dev/null; then
       # đã từng thấy chương trình này mở cổng tạm nào đó → bỏ qua
@@ -288,7 +366,8 @@ check_listen() {
     fi
     info "🆕 Cổng mới mở ra mạng
 Chương trình: $cmd
-$note"
+$note
+$(proc_info "$pid")"
   done
 }
 
@@ -353,7 +432,8 @@ check_persistence() {
 
   apps=$(ls -1d /Applications/*.app /Users/*/Applications/*.app 2>/dev/null)
   diff_state apps "$apps" nonempty | while read -r sign a; do
-    [ "$sign" = "+" ] && info "📦 App mới được cài: $a" || info "📦 App bị gỡ: $a"
+    [ "$sign" = "+" ] && info "📦 App mới được cài: $a
+Chữ ký: $(sig_of "$a")" || info "📦 App bị gỡ: $a"
   done
 }
 
@@ -373,7 +453,7 @@ Tự cập nhật bảo mật: $([ "$au" = 1 ] && echo BẬT || echo TẮT)"
   done
 
   # File của chính MacSentry bị sửa/xoá (nếu không phải bạn vừa cập nhật → có thể bị can thiệp)
-  self=$(ls -1d /usr/local/libexec/macsentryd /Library/LaunchDaemons/io.github.vuminhhoa.macsentry.daemon.plist /etc/macsentry.conf \
+  self=$(ls -1d /usr/local/libexec/macsentryd /Library/LaunchDaemons/io.github.vuminhhoa.macsentry.daemon.plist /etc/macsentry.conf "$TRUSTED" \
          /Users/*/Applications/MacSentry.app/Contents/MacOS/MacSentry 2>/dev/null)
   hash_changes selfsums "$self" | while read -r kind f; do
     [ -n "$f" ] || continue
@@ -455,9 +535,10 @@ while :; do
   t=$(date +%s)
 
   check_remote "$t"
+  [ $((tick % 2)) -eq 0 ] && check_revshell
   [ $((tick % 5)) -eq 0 ] && { check_system; check_hardware; }
   [ $((tick % 15)) -eq 0 ] && { check_listen; check_files; }
-  [ $((tick % 30)) -eq 0 ] && { check_persistence; check_posture; daily_report; }
+  [ $((tick % 30)) -eq 0 ] && { resolve_trusted; check_persistence; check_posture; daily_report; }
   tick=$((tick + 1))
 
   before=$(date +%s)
