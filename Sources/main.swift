@@ -103,7 +103,7 @@ final class Monitor: ObservableObject {
     @Published var trusted: Set<String> = Store.load(Store.trustedURL, as: Set<String>.self) ?? []
 
     var onChange: (() -> Void)?
-    var onNewConnection: ((RemoteConnection) -> Void)?
+    var onNewConnection: ((RemoteConnection, _ atStartup: Bool) -> Void)?
     var onUserLogin: ((RemoteConnection) -> Void)?
     var onSessionEnd: ((HistoryEntry) -> Void)?
 
@@ -223,7 +223,7 @@ final class Monitor: ObservableObject {
                 openHistory[c.id] = e.id
                 changed = true
                 let newConn = c
-                DispatchQueue.main.async { self.onNewConnection?(newConn) } // báo sau khi đã lưu
+                DispatchQueue.main.async { self.onNewConnection?(newConn, initial) } // báo sau khi đã lưu
             }
             newActive.append(c)
         }
@@ -256,24 +256,25 @@ final class Monitor: ObservableObject {
 // MARK: - Camera / micro đang được dùng
 
 enum AVSensors {
-    /// Tên các micro thật (bỏ thiết bị ảo/aggregate như Background Music) đang được app nào đó dùng
+    /// Các app đang thu âm từ micro (API theo từng tiến trình — không nhầm với thiết bị chỉ đang phát âm thanh)
+    static let micIgnored: Set<String> = [
+        "com.apple.CoreSpeech",               // "Hey Siri" — luôn nghe theo thiết kế
+        "com.apple.accessibility.heard",      // Nhận diện âm thanh (Trợ năng)
+    ]
     static func micsInUse() -> [String] {
-        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyProcessObjectList,
                                               mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
         var size: UInt32 = 0
         guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr else { return [] }
-        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        var ids = [AudioObjectID](repeating: 0, count: Int(size) / MemoryLayout<AudioObjectID>.size)
         AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids)
         return ids.compactMap { id in
-            var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams,
-                                                     mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
-            var ss: UInt32 = 0
-            guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &ss) == noErr, ss > 0 else { return nil }
-            let transport: UInt32 = prop(id, kAudioDevicePropertyTransportType) ?? 0
-            if transport == kAudioDeviceTransportTypeVirtual || transport == kAudioDeviceTransportTypeAggregate { return nil }
-            guard let running: UInt32 = prop(id, kAudioDevicePropertyDeviceIsRunningSomewhere), running != 0 else { return nil }
-            let name: Unmanaged<CFString>? = prop(id, kAudioObjectPropertyName)
-            return (name?.takeRetainedValue() as String?) ?? "Micro"
+            guard let input: UInt32 = prop(id, kAudioProcessPropertyIsRunningInput), input != 0 else { return nil }
+            let bundle: Unmanaged<CFString>? = prop(id, kAudioProcessPropertyBundleID)
+            let bid = (bundle?.takeRetainedValue() as String?) ?? ""
+            if micIgnored.contains(bid) { return nil }
+            let pid: pid_t = prop(id, kAudioProcessPropertyPID) ?? 0
+            return NSRunningApplication(processIdentifier: pid)?.localizedName ?? (bid.isEmpty ? "pid \(pid)" : bid)
         }
     }
 
@@ -498,10 +499,16 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var sensorTimer: Timer?
 
     func applicationDidFinishLaunching(_ note: Notification) {
-        // Chỉ cho chạy 1 instance
-        if let bid = Bundle.main.bundleIdentifier,
-           NSRunningApplication.runningApplications(withBundleIdentifier: bid).count > 1 {
-            exit(0) // không qua applicationWillTerminate, để khỏi tắt job netstat của instance đang chạy
+        // Chỉ cho chạy 1 instance. Bản mở bằng Finder/`open` giao cho launchd rồi mới thoát, nên bản launchd
+        // có thể thấy nó còn sống trong giây lát → đợi tối đa 5s. Vẫn trùng → thoát mã lỗi để launchd thử lại sau
+        // (thoát mã 0 thì launchd coi là "thoát bình thường" và không chạy lại → không còn bản nào chạy).
+        if let bid = Bundle.main.bundleIdentifier {
+            var tries = 0
+            while NSRunningApplication.runningApplications(withBundleIdentifier: bid).count > 1 {
+                if tries == 10 { exit(LaunchAtLogin.runningUnderLaunchd ? 1 : 0) } // không qua applicationWillTerminate
+                tries += 1
+                Thread.sleep(forTimeInterval: 0.5)
+            }
         }
         // Mở bằng Finder/`open` → chuyển cho launchd chạy, để bị kill thì launchd tự mở lại
         if !LaunchAtLogin.runningUnderLaunchd { LaunchAtLogin.handOverToLaunchd() }
@@ -519,7 +526,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
 
         monitor.onChange = { [weak self] in self?.refreshStatusItem() }
-        monitor.onNewConnection = { [weak self] c in self?.alert(c) }
+        monitor.onNewConnection = { [weak self] c, atStartup in self?.alert(c, atStartup: atStartup) }
         monitor.onUserLogin = { [weak self] c in
             if Telegram.daemonInstalled { return }
             let mark = self?.monitor.trusted.contains(c.ip) == true ? "✅" : "⚠️"
@@ -567,17 +574,19 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                           silent: !night)
         }
         // Camera / micro bật-tắt (kiểm tra mỗi 3 giây)
-        sensorsInUse = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro: \($0)" })
+        sensorsInUse = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro đang được dùng bởi: \($0)" })
         let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in self?.checkSensors() }
         RunLoop.main.add(t, forMode: .common)
         sensorTimer = t
     }
 
     func checkSensors() {
-        let now = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro: \($0)" })
+        let now = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro đang được dùng bởi: \($0)" })
         let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         for s in now.subtracting(sensorsInUse).sorted() {
-            Telegram.send("\(s) — ĐANG BẬT\nApp đang mở phía trước: \(front)\nLúc: \(timeFmt.string(from: Date()))")
+            // Micro đã biết chính xác app; camera thì chỉ đoán theo app đang mở phía trước
+            let who = s.hasPrefix("🎙") ? "" : "\nApp đang mở phía trước: \(front)"
+            Telegram.send("\(s) — ĐANG BẬT\(who)\nLúc: \(timeFmt.string(from: Date()))")
         }
         for s in sensorsInUse.subtracting(now).sorted() {
             Telegram.send("\(s) — đã tắt\nLúc: \(timeFmt.string(from: Date()))", silent: true)
@@ -663,8 +672,10 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     // MARK: Cảnh báo
 
-    func alert(_ c: RemoteConnection) {
-        let trusted = monitor.trusted.contains(c.ip)
+    func alert(_ c: RemoteConnection, atStartup: Bool = false) {
+        // Kết nối từ chính máy này coi như tin cậy (không popup)
+        let local = c.ip.hasPrefix("127.") || c.ip == "::1" || c.ip == "localhost"
+        let trusted = monitor.trusted.contains(c.ip) || local
         let title = trusted ? "Kết nối \(c.service) (IP tin cậy)" : "⚠️ Có kết nối \(c.service) mới!"
         let body = "Dịch vụ: \(c.service)\nIP: \(c.ip):\(c.remotePort)" + (c.user.map { "\nUser: \($0)" } ?? "")
         // Gửi Telegram trước tiên, trước cả popup (runModal sẽ chặn luồng chính)
@@ -688,7 +699,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             try? p.run()
         }
 
-        if !trusted && !alertShowing {
+        if !trusted && !alertShowing && !atStartup {
             alertShowing = true
             defer { alertShowing = false }
             NSSound(named: "Sosumi")?.play()

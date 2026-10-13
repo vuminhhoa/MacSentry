@@ -65,6 +65,8 @@ REMOTE_PORTS_RE='^(22|5900|3283|445|548|3031)$'
 # In ra các dòng "+ ..." (mới) và "- ..." (mất).
 diff_state() {
   f="$STATE/$1"
+  # $3 = "nonempty": danh sách không bao giờ rỗng thật (user, app, ...) → rỗng nghĩa là lệnh lỗi, bỏ qua lần này
+  if [ "$3" = nonempty ] && [ -z "$(printf '%s' "$2" | tr -d '[:space:]')" ]; then return; fi
   if [ ! -f "$f" ]; then printf '%s\n' "$2" | sed '/^$/d' | sort > "$f"; return; fi
   printf '%s\n' "$2" | sed '/^$/d' | sort > "$f.new"
   comm -13 "$f" "$f.new" | sed 's/^/+ /'
@@ -94,14 +96,20 @@ else
 fi
 
 # launchd gửi SIGTERM khi tắt máy / khởi động lại (hoặc khi có người gỡ daemon bằng sudo)
-trap 'trap - TERM INT; send_now "🔴 Máy đang tắt / khởi động lại (hoặc macsentryd bị dừng)
-Lúc: $(now)"; [ -n "$AUTH_PID" ] && { pkill -P "$AUTH_PID"; kill "$AUTH_PID"; } 2>/dev/null; exit 0' TERM INT
+trap 'trap - TERM INT
+if [ -f "$STATE/updating" ]; then rm -f "$STATE/updating"; log "🔄 macsentryd dừng để cập nhật"
+else send_now "🔴 Máy đang tắt / khởi động lại (hoặc macsentryd bị dừng)
+Lúc: $(now)"; fi
+[ -n "$AUTH_PID" ] && { pkill -P "$AUTH_PID"; kill "$AUTH_PID"; } 2>/dev/null; exit 0' TERM INT
 
 # ---------------------------------------------------------------- 2. xác thực (đọc log hệ thống, chạy nền)
 
 user_of_uuid() { dscl . -search /Users GeneratedUID "$1" 2>/dev/null | awk 'NR==1{print $1}'; }
 
 auth_watch() {
+  while kill -0 "$MAIN_PID" 2>/dev/null; do auth_stream; sleep 5; done   # log stream chết → chạy lại
+}
+auth_stream() {
   /usr/bin/log stream --style compact --predicate '
       (process == "opendirectoryd" AND eventMessage CONTAINS "Authentication failed for")
    OR (eventMessage CONTAINS "OpenDirectory - The authtok is incorrect")
@@ -141,6 +149,12 @@ Lúc: $(now)
         msg=$(printf '%s' "$line" | sed 's/.*sudo\[[^]]*\] *//')
         alert "🔐 sudo nhập sai mật khẩu
 $msg" ;;
+      *"a password is required"*)
+        log "sudo -n bị từ chối (chưa nhập mật khẩu): $(printf '%s' "$line" | sed 's/.*sudo\[[^]]*\] *//')" ;;
+      *"NOT in sudoers"*|*"command not allowed"*|*"not allowed to run"*)
+        msg=$(printf '%s' "$line" | sed 's/.*sudo\[[^]]*\] *//')
+        alert "⛔️ sudo bị TỪ CHỐI (user không có quyền)
+$msg" ;;
       *"COMMAND="*)
         msg=$(printf '%s' "$line" | sed 's/.*sudo\[[^]]*\] *//')
         throttle "sudo_$msg" 10 && info "⚡️ sudo
@@ -161,9 +175,15 @@ check_remote() {
     ip=${r%.*}; ip=${ip#::ffff:}; key=$(printf '%s_%s' "$p" "$r")
     if [ "$sign" = "+" ]; then
       echo "$t" > "$STATE/conn/$key"
-      alert "🚨 Kết nối $(port_name "$p")
+      msg="🚨 Kết nối $(port_name "$p")
 IP: $ip:${r##*.}
 Lúc: $(now)"
+      case $ip in
+        127.*|::1|localhost) info "$msg
+(từ chính máy này)" ;;
+        *) if throttle "conn_${p}_$ip" 300; then alert "$msg"
+           else log "$msg (lặp lại trong 5 phút, không gửi)"; fi ;;
+      esac
     else
       start=$(cat "$STATE/conn/$key" 2>/dev/null || echo "$t"); rm -f "$STATE/conn/$key"
       info "🔌 Kết thúc $(port_name "$p")
@@ -187,7 +207,7 @@ Từ: $host ($tty)"; fi
 check_system() {
   # LaunchAgent/LaunchDaemon mới — cách phổ biến để mã độc tự chạy lại
   items=$(ls -1d /Library/LaunchAgents/* /Library/LaunchDaemons/* /Users/*/Library/LaunchAgents/* 2>/dev/null)
-  diff_state persistence "$items" | while read -r sign path; do
+  diff_state persistence "$items" nonempty | while read -r sign path; do
     if [ "$sign" = "+" ]; then
       prog=$(plutil -extract Program raw -o - "$path" 2>/dev/null || plutil -extract ProgramArguments.0 raw -o - "$path" 2>/dev/null)
       alert "🧩 Có chương trình tự khởi động mới
@@ -199,28 +219,29 @@ File: $path"; fi
 
   # Tài khoản user (UID >= 500) và nhóm admin
   users=$(dscl . -list /Users UniqueID | awk '$2 >= 500 {print $1}')
-  diff_state users "$users" | while read -r sign u; do
+  diff_state users "$users" nonempty | while read -r sign u; do
     [ "$sign" = "+" ] && alert "👥 Có tài khoản user mới: $u" || alert "👥 Đã xoá tài khoản user: $u"
   done
   admins=$(dscl . -read /Groups/admin GroupMembership 2>/dev/null | cut -d: -f2- | tr ' ' '\n')
-  diff_state admins "$admins" | while read -r sign u; do
+  diff_state admins "$admins" nonempty | while read -r sign u; do
     [ "$sign" = "+" ] && alert "👑 $u vừa được cấp quyền ADMIN" || info "👑 $u bị gỡ quyền admin"
   done
 
   # Firewall & Gatekeeper
-  fw=$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null | grep -q 'enabled' && echo "BẬT" || echo "TẮT")
-  diff_state firewall "$fw" | while read -r sign v; do
+  fw=$(/usr/libexec/ApplicationFirewall/socketfilterfw --getglobalstate 2>/dev/null |
+       awk '/enabled/ { print "BẬT" } /disabled/ { print "TẮT" }')   # lệnh lỗi → rỗng → bỏ qua
+  diff_state firewall "$fw" nonempty | while read -r sign v; do
     [ "$sign" = "+" ] && { [ "$v" = "TẮT" ] && alert "🧱 Firewall vừa bị TẮT" || info "🧱 Firewall đã bật"; }
   done
-  gk=$(spctl --status 2>/dev/null | grep -q 'enabled' && echo "BẬT" || echo "TẮT")
-  diff_state gatekeeper "$gk" | while read -r sign v; do
+  gk=$(spctl --status 2>/dev/null | awk '/enabled/ { print "BẬT" } /disabled/ { print "TẮT" }')
+  diff_state gatekeeper "$gk" nonempty | while read -r sign v; do
     [ "$sign" = "+" ] && { [ "$v" = "TẮT" ] && alert "🛂 Gatekeeper vừa bị TẮT (cho chạy app không rõ nguồn gốc)" || info "🛂 Gatekeeper đã bật"; }
   done
 
   # Nghi reverse shell: shell / netcat / thông dịch script giữ kết nối TCP ra ngoài
   rs=$(lsof -nP -iTCP -sTCP:ESTABLISHED -F pcn 2>/dev/null | awk '/^p/ { p = substr($0, 2) } /^c/ { c = substr($0, 2) } /^n/ {
          split(substr($0, 2), a, "->"); r = a[2]; if (r == "" || r ~ /^(127\.|\[::1\]|localhost)/) next
-         if (c ~ /^(bash|sh|zsh|dash|ksh|tcsh|csh|fish|nc|ncat|netcat|socat|telnet|perl|ruby|php)$/) print c " (pid " p ") -> " r }' | sort -u)
+         if (c ~ /^(bash|sh|zsh|dash|ksh|tcsh|csh|fish|nc|ncat|netcat|socat|telnet)$/) print c " (pid " p ") -> " r }' | sort -u)
   diff_state revshell "$rs" | while read -r sign rest; do
     [ "$sign" = "+" ] && alert "☠️ Nghi REVERSE SHELL: $rest
 (shell/netcat đang giữ kết nối mạng — nếu không phải bạn: ngắt mạng và kiểm tra ngay)"
@@ -238,8 +259,10 @@ Có thể đã bị gỡ LaunchAgent hoặc xoá app"
   services=$(netstat -an -p tcp | awk '$6=="LISTEN" { n=split($4,a,"."); print a[n] }' |
              awk -v re="$REMOTE_PORTS_RE" '$1 ~ re' | sort -u)
   diff_state services "$services" | while read -r sign p; do
-    [ "$sign" = "+" ] && alert "📡 Vừa BẬT $(port_name "$p") (cổng $p) — máy nhận kết nối từ xa" \
-                      || info "📡 Đã tắt $(port_name "$p") (cổng $p)"
+    if [ "$sign" = "-" ]; then info "📡 Đã tắt $(port_name "$p") (cổng $p)"
+    elif [ "$tick" -eq 0 ]; then alert "📡 $(port_name "$p") (cổng $p) đang BẬT — máy nhận kết nối từ xa
+(phát hiện lúc macsentryd khởi động)"
+    else alert "📡 Vừa BẬT $(port_name "$p") (cổng $p) — máy nhận kết nối từ xa"; fi
   done
 }
 
@@ -289,9 +312,13 @@ check_files() {
       removed) alert "📝 File nhạy cảm bị XOÁ: $f"; rm -f "$copy" ;;
       new)     alert "📝 File nhạy cảm MỚI: $f
 $(head -10 "$f" | cut -c1-200)"; cp "$f" "$copy" ;;
-      changed) alert "📝 File nhạy cảm bị SỬA: $f
+      changed)
+        case $f in /etc/pam.d/*|/etc/zshrc|/etc/zprofile|/etc/bashrc|/etc/profile|/etc/ssh/sshd_config)
+          hint="
+(file của macOS — nếu vừa cập nhật macOS thì thường là bình thường)" ;; *) hint="" ;; esac
+        alert "📝 File nhạy cảm bị SỬA: $f
 $(diff "$copy" "$f" 2>/dev/null | grep '^[<>]' | head -15 | cut -c1-200)
-(< dòng cũ, > dòng mới)"; cp "$f" "$copy" ;;
+(< dòng cũ, > dòng mới)$hint"; cp "$f" "$copy" ;;
     esac
   done
 }
@@ -300,19 +327,20 @@ check_persistence() {
   # Login Items / Background Items đăng ký qua SMAppService (loại "legacy" = plist, đã theo dõi ở check_system)
   btm=$(sfltool dumpbtm 2>/dev/null | awk -F': ' '/^ *Type:/ { t = $2 } /^ *Identifier:/ {
           if (t !~ /^(developer|app|legacy)/) print t " | " $2 }' | sort -u)
-  diff_state btm "$btm" | while read -r sign rest; do
+  diff_state btm "$btm" nonempty | while read -r sign rest; do
     [ "$sign" = "+" ] && alert "🧩 Mục chạy nền / Login Item mới: $rest" || info "🧩 Đã gỡ mục chạy nền: $rest"
   done
 
-  profs=$(profiles list -all 2>/dev/null | sed -n 's/.*profileIdentifier: //p')
+  # Bỏ profile Screen Time (com.apple.ManagedSettings.*): macOS tự tạo/xoá khi đổi cài đặt Screen Time
+  profs=$(profiles list -all 2>/dev/null | sed -n 's/.*profileIdentifier: //p' | grep -v '^com\.apple\.ManagedSettings\.')
   diff_state profiles "$profs" | while read -r sign p; do
     [ "$sign" = "+" ] && alert "📜 Có configuration profile MỚI: $p
 (profile có thể ép proxy, chứng chỉ, quản lý máy từ xa)" || info "📜 Đã gỡ profile: $p"
   done
 
-  sysext=$(systemextensionsctl list 2>/dev/null | awk -F'\t' 'NF >= 6 && $3 != "teamID" { sub(/ \(.*/, "", $4); print $4 " " $6 }')
+  sysext=$(systemextensionsctl list 2>/dev/null | awk -F'\t' 'NF >= 6 && $3 != "teamID" { sub(/ \(.*/, "", $4); print $4 }')
   diff_state sysext "$sysext" | while read -r sign e; do
-    [ "$sign" = "+" ] && alert "🧷 System extension mới / đổi trạng thái: $e" || info "🧷 System extension gỡ / đổi trạng thái: $e"
+    [ "$sign" = "+" ] && alert "🧷 System extension mới: $e" || info "🧷 System extension đã gỡ: $e"
   done
 
   proxy=$(scutil --proxy | awk '/Enable : 1|URLString|Proxy :|Port :/ { $1 = $1; print }')
@@ -324,7 +352,7 @@ check_persistence() {
   diff_state dns "$dns" | while read -r sign v; do [ "$sign" = "+" ] && info "🧭 DNS server mới: $v"; done
 
   apps=$(ls -1d /Applications/*.app /Users/*/Applications/*.app 2>/dev/null)
-  diff_state apps "$apps" | while read -r sign a; do
+  diff_state apps "$apps" nonempty | while read -r sign a; do
     [ "$sign" = "+" ] && info "📦 App mới được cài: $a" || info "📦 App bị gỡ: $a"
   done
 }
@@ -380,13 +408,19 @@ Firewall: $(cat "$STATE/firewall" 2>/dev/null) | Gatekeeper: $(cat "$STATE/gatek
 
 check_hardware() {
   usb=$(ioreg -p IOUSB -w0 | sed -n 's/.*+-o \(.*\)@[0-9a-f]*  <class.*/\1/p' | grep -v -E '^(Root|AppleT[0-9]+USBXHCI|USB[0-9.]* (Gen[0-9]+ )?Hub)$')
+  [ -f "$STATE/usb_known" ] || printf '%s\n' "$usb" > "$STATE/usb_known"
   diff_state usb "$usb" | while read -r sign name; do
-    [ "$sign" = "+" ] && alert "🔌 Vừa cắm thiết bị USB: $name" || info "🔌 Đã rút thiết bị USB: $name"
+    if [ "$sign" = "-" ]; then info "🔌 Đã rút thiết bị USB: $name"
+    elif grep -qxF "$name" "$STATE/usb_known"; then info "🔌 Cắm lại thiết bị USB quen: $name"
+    else echo "$name" >> "$STATE/usb_known"; alert "🔌 Vừa cắm thiết bị USB MỚI (chưa từng thấy): $name"; fi
   done
 
   vols=$(ls -1 /Volumes 2>/dev/null | grep -v -E '^(Macintosh HD|Recovery|Preboot|VM|Data)$')
+  [ -f "$STATE/volumes_known" ] || printf '%s\n' "$vols" > "$STATE/volumes_known"
   diff_state volumes "$vols" | while read -r sign name; do
-    [ "$sign" = "+" ] && alert "💾 Vừa gắn ổ đĩa: $name" || info "💾 Đã tháo ổ đĩa: $name"
+    if [ "$sign" = "-" ]; then info "💾 Đã tháo ổ đĩa: $name"
+    elif grep -qxF "$name" "$STATE/volumes_known"; then info "💾 Gắn lại ổ đĩa quen: $name"
+    else echo "$name" >> "$STATE/volumes_known"; alert "💾 Vừa gắn ổ đĩa MỚI (chưa từng thấy): $name"; fi
   done
 
   # Nguồn điện / pin (chỉ máy có pin)
@@ -416,16 +450,9 @@ check_hardware() {
 
 # ---------------------------------------------------------------- vòng lặp chính
 
-last=$(date +%s); tick=0
+tick=0
 while :; do
   t=$(date +%s)
-  # Vòng lặp 2s mà cách nhau > 60s → máy vừa ngủ dậy
-  if [ $((t - last)) -gt 60 ]; then
-    info "☀️ Máy thức dậy
-Lúc: $(now)
-Đã ngủ khoảng: $(dur $((t - last)))"
-  fi
-  last=$t
 
   check_remote "$t"
   [ $((tick % 5)) -eq 0 ] && { check_system; check_hardware; }
@@ -433,5 +460,13 @@ Lúc: $(now)
   [ $((tick % 30)) -eq 0 ] && { check_persistence; check_posture; daily_report; }
   tick=$((tick + 1))
 
+  before=$(date +%s)
   sleep 2 & wait $!   # wait để trap TERM chạy ngay, không đợi hết sleep
+  # "sleep 2" kéo dài > 60s → máy đã ngủ trong lúc đó (đo riêng lệnh sleep, không tính các check chạy chậm)
+  slept=$(( $(date +%s) - before ))
+  if [ "$slept" -gt 60 ]; then
+    info "☀️ Máy thức dậy
+Lúc: $(now)
+Đã ngủ khoảng: $(dur "$slept")"
+  fi
 done
