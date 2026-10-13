@@ -244,6 +244,7 @@ Có thể đã bị gỡ LaunchAgent hoặc xoá app"
 }
 
 # Cổng mới mở ra mạng (mỗi 30 giây). Chỉ báo lần đầu thấy mỗi cặp (chương trình, cổng) để tránh ồn.
+# Cổng tạm (>= 49152, hệ điều hành cấp ngẫu nhiên — vd remoted, rapportd) tính chung: mỗi chương trình báo 1 lần.
 check_listen() {
   cur=$(lsof +c 0 -nP -iTCP -sTCP:LISTEN -F cn 2>/dev/null |
         awk '/^c/ { c=substr($0,2) } /^n/ { name=substr($0,2); if (name ~ /^(127\.|\[::1\]|localhost)/) next
@@ -252,11 +253,19 @@ check_listen() {
   if [ ! -f "$seen" ]; then printf '%s\n' "$cur" > "$seen"; return; fi
   printf '%s\n' "$cur" | while IFS='|' read -r cmd port; do
     [ -n "$cmd" ] || continue
-    grep -qxF "$cmd|$port" "$seen" && continue
-    echo "$cmd|$port" >> "$seen"
+    if [ "$port" -ge 49152 ] 2>/dev/null; then
+      # đã từng thấy chương trình này mở cổng tạm nào đó → bỏ qua
+      awk -F'|' -v c="$cmd" '$1 == c && ($2 == "tạm" || $2 >= 49152) { f = 1 } END { exit !f }' "$seen" && continue
+      echo "$cmd|tạm" >> "$seen"
+      note="Cổng: $port (cổng tạm — lần sau chương trình này đổi cổng tạm sẽ không báo nữa)"
+    else
+      grep -qxF "$cmd|$port" "$seen" && continue
+      echo "$cmd|$port" >> "$seen"
+      note="Cổng: $port"
+    fi
     info "🆕 Cổng mới mở ra mạng
 Chương trình: $cmd
-Cổng: $port"
+$note"
   done
 }
 
