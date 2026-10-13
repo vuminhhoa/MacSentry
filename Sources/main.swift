@@ -4,12 +4,14 @@
 import AppKit
 import SwiftUI
 import UserNotifications
+import CoreAudio
+import CoreMediaIO
 
 // MARK: - Model
 
 /// Cổng của các dịch vụ truy cập từ xa cần theo dõi (khớp với REMOTE_PORTS trong daemon/macsentryd.sh)
 let remoteServices: [String: String] = [
-    "22": "SSH", "5900": "Screen Sharing/VNC", "3283": "Apple Remote Desktop", "445": "Chia sẻ file SMB", "548": "AFP",
+    "22": "SSH", "5900": "Screen Sharing/VNC", "3283": "Apple Remote Desktop", "445": "Chia sẻ file SMB", "548": "AFP", "3031": "Remote Apple Events",
 ]
 
 struct RemoteConnection: Identifiable, Hashable {
@@ -251,6 +253,62 @@ final class Monitor: ObservableObject {
     }
 }
 
+// MARK: - Camera / micro đang được dùng
+
+enum AVSensors {
+    /// Tên các micro thật (bỏ thiết bị ảo/aggregate như Background Music) đang được app nào đó dùng
+    static func micsInUse() -> [String] {
+        var addr = AudioObjectPropertyAddress(mSelector: kAudioHardwarePropertyDevices,
+                                              mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size: UInt32 = 0
+        guard AudioObjectGetPropertyDataSize(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size) == noErr else { return [] }
+        var ids = [AudioDeviceID](repeating: 0, count: Int(size) / MemoryLayout<AudioDeviceID>.size)
+        AudioObjectGetPropertyData(AudioObjectID(kAudioObjectSystemObject), &addr, 0, nil, &size, &ids)
+        return ids.compactMap { id in
+            var streams = AudioObjectPropertyAddress(mSelector: kAudioDevicePropertyStreams,
+                                                     mScope: kAudioDevicePropertyScopeInput, mElement: kAudioObjectPropertyElementMain)
+            var ss: UInt32 = 0
+            guard AudioObjectGetPropertyDataSize(id, &streams, 0, nil, &ss) == noErr, ss > 0 else { return nil }
+            let transport: UInt32 = prop(id, kAudioDevicePropertyTransportType) ?? 0
+            if transport == kAudioDeviceTransportTypeVirtual || transport == kAudioDeviceTransportTypeAggregate { return nil }
+            guard let running: UInt32 = prop(id, kAudioDevicePropertyDeviceIsRunningSomewhere), running != 0 else { return nil }
+            let name: Unmanaged<CFString>? = prop(id, kAudioObjectPropertyName)
+            return (name?.takeRetainedValue() as String?) ?? "Micro"
+        }
+    }
+
+    private static func prop<T>(_ id: AudioObjectID, _ sel: AudioObjectPropertySelector) -> T? {
+        var addr = AudioObjectPropertyAddress(mSelector: sel, mScope: kAudioObjectPropertyScopeGlobal, mElement: kAudioObjectPropertyElementMain)
+        var size = UInt32(MemoryLayout<T>.size)
+        let buf = UnsafeMutablePointer<T>.allocate(capacity: 1); defer { buf.deallocate() }
+        return AudioObjectGetPropertyData(id, &addr, 0, nil, &size, buf) == noErr ? buf.pointee : nil
+    }
+
+    /// Tên các camera đang được app nào đó dùng
+    static func camerasInUse() -> [String] {
+        func addr(_ sel: Int) -> CMIOObjectPropertyAddress {
+            CMIOObjectPropertyAddress(mSelector: CMIOObjectPropertySelector(sel),
+                                      mScope: CMIOObjectPropertyScope(kCMIOObjectPropertyScopeGlobal),
+                                      mElement: CMIOObjectPropertyElement(kCMIOObjectPropertyElementMain))
+        }
+        var a = addr(kCMIOHardwarePropertyDevices)
+        var size: UInt32 = 0, used: UInt32 = 0
+        guard CMIOObjectGetPropertyDataSize(CMIOObjectID(kCMIOObjectSystemObject), &a, 0, nil, &size) == noErr else { return [] }
+        var ids = [CMIOObjectID](repeating: 0, count: Int(size) / MemoryLayout<CMIOObjectID>.size)
+        CMIOObjectGetPropertyData(CMIOObjectID(kCMIOObjectSystemObject), &a, 0, nil, size, &used, &ids)
+        return ids.compactMap { id in
+            var ra = addr(kCMIODevicePropertyDeviceIsRunningSomewhere)
+            var running: UInt32 = 0
+            CMIOObjectGetPropertyData(id, &ra, 0, nil, UInt32(MemoryLayout<UInt32>.size), &used, &running)
+            guard running != 0 else { return nil }
+            var na = addr(kCMIOObjectPropertyName)
+            var name: Unmanaged<CFString>?
+            CMIOObjectGetPropertyData(id, &na, 0, nil, UInt32(MemoryLayout<Unmanaged<CFString>?>.size), &used, &name)
+            return (name?.takeRetainedValue() as String?) ?? "Camera"
+        }
+    }
+}
+
 // MARK: - Khởi động cùng máy (LaunchAgent) — bắt buộc, không cho tắt
 
 enum LaunchAtLogin {
@@ -271,6 +329,23 @@ enum LaunchAtLogin {
         ]
         try? FileManager.default.createDirectory(at: plistURL.deletingLastPathComponent(), withIntermediateDirectories: true)
         (plist as NSDictionary).write(to: plistURL, atomically: true)
+    }
+
+    /// launchd đặt XPC_SERVICE_NAME = label cho tiến trình do nó chạy
+    static var runningUnderLaunchd: Bool { ProcessInfo.processInfo.environment["XPC_SERVICE_NAME"] == label }
+
+    /// Giao app cho launchd quản lý (KeepAlive: bị kill sẽ tự chạy lại), rồi thoát tiến trình hiện tại
+    static func handOverToLaunchd() -> Never {
+        ensure()
+        let domain = "gui/\(getuid())"
+        for args in [["bootstrap", domain, plistURL.path], ["kickstart", "\(domain)/\(label)"]] {
+            let p = Process()
+            p.executableURL = URL(fileURLWithPath: "/bin/launchctl")
+            p.arguments = args
+            p.standardError = FileHandle.nullDevice
+            try? p.run(); p.waitUntilExit()
+        }
+        exit(0)
     }
 }
 
@@ -419,6 +494,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var alertShowing = false
     var poweringOff = false
     var sleptAt: Date?
+    var sensorsInUse: Set<String> = []
+    var sensorTimer: Timer?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         // Chỉ cho chạy 1 instance
@@ -426,6 +503,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
            NSRunningApplication.runningApplications(withBundleIdentifier: bid).count > 1 {
             exit(0) // không qua applicationWillTerminate, để khỏi tắt job netstat của instance đang chạy
         }
+        // Mở bằng Finder/`open` → chuyển cho launchd chạy, để bị kill thì launchd tự mở lại
+        if !LaunchAtLogin.runningUnderLaunchd { LaunchAtLogin.handOverToLaunchd() }
         LaunchAtLogin.ensure()
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
@@ -482,8 +561,28 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Telegram.send("🔒 Màn hình đã khoá\nLúc: \(timeFmt.string(from: Date()))", silent: true)
         }
         dn.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { _ in
-            Telegram.send("🔓 Màn hình được mở khoá (\(NSUserName()))\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+            // Mở khoá lúc 0h–6h sáng là bất thường → có chuông
+            let night = Calendar.current.component(.hour, from: Date()) < 6
+            Telegram.send("\(night ? "🌙 Máy được mở khoá lúc NỬA ĐÊM" : "🔓 Màn hình được mở khoá") (\(NSUserName()))\nLúc: \(timeFmt.string(from: Date()))",
+                          silent: !night)
         }
+        // Camera / micro bật-tắt (kiểm tra mỗi 3 giây)
+        sensorsInUse = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro: \($0)" })
+        let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in self?.checkSensors() }
+        RunLoop.main.add(t, forMode: .common)
+        sensorTimer = t
+    }
+
+    func checkSensors() {
+        let now = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro: \($0)" })
+        let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
+        for s in now.subtracting(sensorsInUse).sorted() {
+            Telegram.send("\(s) — ĐANG BẬT\nApp đang mở phía trước: \(front)\nLúc: \(timeFmt.string(from: Date()))")
+        }
+        for s in sensorsInUse.subtracting(now).sorted() {
+            Telegram.send("\(s) — đã tắt\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+        }
+        sensorsInUse = now
     }
 
     /// Thời điểm máy khởi động (kern.boottime)
@@ -554,8 +653,6 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
                                 action: nil, keyEquivalent: "")
         menu.addItem(daemon)
         menu.addItem(item("Cài đặt Chia sẻ (Remote Login)…", #selector(openSharing), ""))
-        menu.addItem(.separator())
-        menu.addItem(item("Thoát MacSentry", #selector(quit), "q"))
     }
 
     func item(_ title: String, _ sel: Selector, _ key: String) -> NSMenuItem {
@@ -649,7 +746,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         NSWorkspace.shared.open(URL(string: "x-apple.systempreferences:com.apple.Sharing-Settings.extension")!)
     }
 
-    @objc func quit() { NSApp.terminate(nil) }
+    /// Không cho thoát app, trừ khi đang tắt máy / khởi động lại / đăng xuất (để không chặn việc tắt máy)
+    func applicationShouldTerminate(_ sender: NSApplication) -> NSApplication.TerminateReply {
+        if poweringOff { return .terminateNow }
+        let reason = NSAppleEventManager.shared().currentAppleEvent?
+            .attributeDescriptor(forKeyword: AEKeyword(kAEQuitReason))?.enumCodeValue
+        let systemReasons: [OSType] = [OSType(kAELogOut), OSType(kAEReallyLogOut), OSType(kAEShowRestartDialog),
+                                       OSType(kAEShowShutdownDialog), OSType(kAERestart), OSType(kAEShutDown)]
+        if let reason, systemReasons.contains(reason) { poweringOff = true; return .terminateNow }
+        Telegram.send("⛔️ Có lệnh thoát MacSentry — đã chặn\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+        return .terminateCancel
+    }
 
     func applicationWillTerminate(_ note: Notification) {
         if !poweringOff { Telegram.send("⏹ MacSentry (app) đã bị tắt", wait: true) }

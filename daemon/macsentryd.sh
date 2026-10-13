@@ -7,6 +7,10 @@
 #   - Thay đổi hệ thống: LaunchAgent/Daemon mới, user/admin mới, firewall, Gatekeeper, dịch vụ từ xa bật/tắt,
 #     cổng mới mở ra mạng
 #   - Phần cứng & mạng: USB, ổ đĩa ngoài, nguồn điện/pin, đổi mạng, ổ đĩa sắp đầy
+#   - Chống cài cắm: authorized_keys, sshd_config, sudoers, PAM, cron, shell rc hệ thống, /etc/hosts,
+#     Login/Background Items, configuration profile, system extension, proxy, DNS, app mới
+#   - Nghi reverse shell (shell/netcat giữ kết nối mạng)
+#   - Tư thế bảo mật: SIP, FileVault, tự cập nhật bảo mật; file của chính MacSentry bị sửa; báo cáo hằng ngày
 # Cấu hình: /etc/macsentry.conf (TOKEN=..., CHAT=...), chỉ root đọc được.
 
 CONF=${CONF:-/etc/macsentry.conf}
@@ -52,10 +56,10 @@ dur() { s=$1; if [ $s -lt 60 ]; then echo "${s}s"; elif [ $s -lt 3600 ]; then ec
 port_name() {
   case $1 in
     22) echo "SSH";; 5900) echo "Screen Sharing/VNC";; 3283) echo "Apple Remote Desktop";;
-    445) echo "Chia sẻ file SMB";; 548) echo "AFP";; *) echo "cổng $1";;
+    445) echo "Chia sẻ file SMB";; 548) echo "AFP";; 3031) echo "Remote Apple Events";; *) echo "cổng $1";;
   esac
 }
-REMOTE_PORTS_RE='^(22|5900|3283|445|548)$'
+REMOTE_PORTS_RE='^(22|5900|3283|445|548|3031)$'
 
 # So sánh danh sách mới ($2) với danh sách đã lưu ($1). Lần đầu chỉ lưu làm mốc, không báo.
 # In ra các dòng "+ ..." (mới) và "- ..." (mất).
@@ -67,6 +71,15 @@ diff_state() {
   comm -23 "$f" "$f.new" | sed 's/^/- /'
   mv "$f.new" "$f"
 }
+
+# Theo dõi nội dung file qua mã băm. $1 = tên state, $2 = danh sách file.
+# In ra "changed|new|removed <path>" (lần đầu chỉ lưu mốc).
+hash_changes() {
+  sums=$(for f in $2; do [ -f "$f" ] && printf '%s %s\n' "$(shasum -a 256 "$f" 2>/dev/null | cut -c1-16)" "$f"; done)
+  diff_state "$1" "$sums" | awk '{ s[$3] = s[$3] $1 } END {
+      for (f in s) print (length(s[f]) == 2 ? "changed" : (s[f] == "+" ? "new" : "removed")), f }'
+}
+copy_of() { echo "$STATE/files/$(printf '%s' "$1" | tr '/' '_')"; }
 
 # ---------------------------------------------------------------- 1. khởi động / tắt máy
 
@@ -204,6 +217,23 @@ File: $path"; fi
     [ "$sign" = "+" ] && { [ "$v" = "TẮT" ] && alert "🛂 Gatekeeper vừa bị TẮT (cho chạy app không rõ nguồn gốc)" || info "🛂 Gatekeeper đã bật"; }
   done
 
+  # Nghi reverse shell: shell / netcat / thông dịch script giữ kết nối TCP ra ngoài
+  rs=$(lsof -nP -iTCP -sTCP:ESTABLISHED -F pcn 2>/dev/null | awk '/^p/ { p = substr($0, 2) } /^c/ { c = substr($0, 2) } /^n/ {
+         split(substr($0, 2), a, "->"); r = a[2]; if (r == "" || r ~ /^(127\.|\[::1\]|localhost)/) next
+         if (c ~ /^(bash|sh|zsh|dash|ksh|tcsh|csh|fish|nc|ncat|netcat|socat|telnet|perl|ruby|php)$/) print c " (pid " p ") -> " r }' | sort -u)
+  diff_state revshell "$rs" | while read -r sign rest; do
+    [ "$sign" = "+" ] && alert "☠️ Nghi REVERSE SHELL: $rest
+(shell/netcat đang giữ kết nối mạng — nếu không phải bạn: ngắt mạng và kiểm tra ngay)"
+  done
+
+  # App MacSentry phải luôn chạy khi có người đăng nhập (vắng ~30s liên tục → có thể đã bị gỡ)
+  console=$(stat -f %Su /dev/console)
+  if [ "$console" != root ] && ! pgrep -x MacSentry >/dev/null; then
+    n=$(( $(cat "$STATE/app_missing" 2>/dev/null || echo 0) + 1 )); echo "$n" > "$STATE/app_missing"
+    [ "$n" -ge 3 ] && throttle appmissing 600 && alert "⚠️ App MacSentry KHÔNG chạy (user đang đăng nhập: $console)
+Có thể đã bị gỡ LaunchAgent hoặc xoá app"
+  else echo 0 > "$STATE/app_missing"; fi
+
   # Dịch vụ truy cập từ xa bật/tắt (đang lắng nghe trên cổng của nó)
   services=$(netstat -an -p tcp | awk '$6=="LISTEN" { n=split($4,a,"."); print a[n] }' |
              awk -v re="$REMOTE_PORTS_RE" '$1 ~ re' | sort -u)
@@ -228,6 +258,113 @@ check_listen() {
 Chương trình: $cmd
 Cổng: $port"
   done
+}
+
+# ---------------------------------------------------------------- 4b. chống cài cắm (mỗi 30-60 giây)
+
+# File cấu hình nhạy cảm — hacker hay sửa để giữ quyền truy cập (kèm nội dung thay đổi)
+SENSITIVE_FILES=${SENSITIVE_FILES:-"/Users/*/.ssh/authorized_keys /Users/*/.ssh/authorized_keys2 /var/root/.ssh/authorized_keys
+  /etc/ssh/sshd_config /etc/ssh/sshd_config.d/* /etc/sudoers /etc/sudoers.d/* /etc/pam.d/*
+  /etc/crontab /usr/lib/cron/tabs/* /etc/hosts /etc/zshrc /etc/zprofile /etc/bashrc /etc/profile"}
+
+check_files() {
+  mkdir -p "$STATE/files"
+  list=$(ls -1d $SENSITIVE_FILES 2>/dev/null | sort -u)
+  first=0; [ -f "$STATE/filesums" ] || first=1
+  changes=$(hash_changes filesums "$list")
+  if [ $first = 1 ]; then for f in $list; do cp "$f" "$(copy_of "$f")" 2>/dev/null; done; return; fi
+  printf '%s\n' "$changes" | while read -r kind f; do
+    [ -n "$f" ] || continue
+    copy=$(copy_of "$f")
+    case $kind in
+      removed) alert "📝 File nhạy cảm bị XOÁ: $f"; rm -f "$copy" ;;
+      new)     alert "📝 File nhạy cảm MỚI: $f
+$(head -10 "$f" | cut -c1-200)"; cp "$f" "$copy" ;;
+      changed) alert "📝 File nhạy cảm bị SỬA: $f
+$(diff "$copy" "$f" 2>/dev/null | grep '^[<>]' | head -15 | cut -c1-200)
+(< dòng cũ, > dòng mới)"; cp "$f" "$copy" ;;
+    esac
+  done
+}
+
+check_persistence() {
+  # Login Items / Background Items đăng ký qua SMAppService (loại "legacy" = plist, đã theo dõi ở check_system)
+  btm=$(sfltool dumpbtm 2>/dev/null | awk -F': ' '/^ *Type:/ { t = $2 } /^ *Identifier:/ {
+          if (t !~ /^(developer|app|legacy)/) print t " | " $2 }' | sort -u)
+  diff_state btm "$btm" | while read -r sign rest; do
+    [ "$sign" = "+" ] && alert "🧩 Mục chạy nền / Login Item mới: $rest" || info "🧩 Đã gỡ mục chạy nền: $rest"
+  done
+
+  profs=$(profiles list -all 2>/dev/null | sed -n 's/.*profileIdentifier: //p')
+  diff_state profiles "$profs" | while read -r sign p; do
+    [ "$sign" = "+" ] && alert "📜 Có configuration profile MỚI: $p
+(profile có thể ép proxy, chứng chỉ, quản lý máy từ xa)" || info "📜 Đã gỡ profile: $p"
+  done
+
+  sysext=$(systemextensionsctl list 2>/dev/null | awk -F'\t' 'NF >= 6 && $3 != "teamID" { sub(/ \(.*/, "", $4); print $4 " " $6 }')
+  diff_state sysext "$sysext" | while read -r sign e; do
+    [ "$sign" = "+" ] && alert "🧷 System extension mới / đổi trạng thái: $e" || info "🧷 System extension gỡ / đổi trạng thái: $e"
+  done
+
+  proxy=$(scutil --proxy | awk '/Enable : 1|URLString|Proxy :|Port :/ { $1 = $1; print }')
+  diff_state proxy "$proxy" | while read -r sign v; do
+    [ "$sign" = "+" ] && alert "🕸 Cấu hình PROXY thay đổi: $v
+(proxy lạ có thể dùng để nghe lén traffic)"
+  done
+  dns=$(scutil --dns | awk '/nameserver\[/ { print $3 }' | sort -u)
+  diff_state dns "$dns" | while read -r sign v; do [ "$sign" = "+" ] && info "🧭 DNS server mới: $v"; done
+
+  apps=$(ls -1d /Applications/*.app /Users/*/Applications/*.app 2>/dev/null)
+  diff_state apps "$apps" | while read -r sign a; do
+    [ "$sign" = "+" ] && info "📦 App mới được cài: $a" || info "📦 App bị gỡ: $a"
+  done
+}
+
+# ---------------------------------------------------------------- 4c. tư thế bảo mật & tự bảo vệ (mỗi 60 giây)
+
+check_posture() {
+  sip=$(csrutil status 2>/dev/null | grep -q 'enabled\.' && echo BẬT || echo TẮT)
+  fv=$(fdesetup status 2>/dev/null | grep -q 'FileVault is On' && echo BẬT || echo TẮT)
+  au=$(defaults read /Library/Preferences/com.apple.SoftwareUpdate CriticalUpdateInstall 2>/dev/null)
+  posture="SIP: $sip
+FileVault: $fv
+Tự cập nhật bảo mật: $([ "$au" = 1 ] && echo BẬT || echo TẮT)"
+  echo "$posture" > "$STATE/posture_now"
+  diff_state posture "$posture" | while read -r sign v; do
+    [ "$sign" = "+" ] || continue
+    case $v in *TẮT) alert "🛡 Bảo mật bị hạ: $v" ;; *) info "🛡 Bảo mật: $v" ;; esac
+  done
+
+  # File của chính MacSentry bị sửa/xoá (nếu không phải bạn vừa cập nhật → có thể bị can thiệp)
+  self=$(ls -1d /usr/local/libexec/macsentryd /Library/LaunchDaemons/io.github.vuminhhoa.macsentry.daemon.plist /etc/macsentry.conf \
+         /Users/*/Applications/MacSentry.app/Contents/MacOS/MacSentry 2>/dev/null)
+  hash_changes selfsums "$self" | while read -r kind f; do
+    [ -n "$f" ] || continue
+    case $kind in
+      removed) alert "🧬 File của MacSentry bị XOÁ: $f" ;;
+      *) alert "🧬 File của MacSentry thay đổi: $f
+(nếu bạn không vừa cập nhật MacSentry → có thể bị can thiệp)" ;;
+    esac
+  done
+}
+
+# Báo cáo mỗi sáng (sau 8h). Không thấy báo cáo trong ngày → daemon/máy có vấn đề.
+daily_report() {
+  today=$(date +%Y%m%d)
+  [ "$(date +%H)" -ge 8 ] || return
+  [ "$(cat "$STATE/last_report" 2>/dev/null)" = "$today" ] && return
+  echo "$today" > "$STATE/last_report"
+  start=$(cat "$STATE/report_line" 2>/dev/null || echo 0); total=$(wc -l < "$LOG" | tr -d ' ')
+  echo "$total" > "$STATE/report_line"
+  summary=$(tail -n +"$((start + 1))" "$LOG" | awk '{ print $3 }' | sort | uniq -c | sort -rn |
+            awk '{ printf "%s×%s  ", $2, $1 }')
+  info "📊 Báo cáo hằng ngày
+Máy bật từ: $(date -r "$boot" '+%d/%m/%Y %H:%M')
+Sự kiện từ báo cáo trước: ${summary:-không có}
+Kết nối từ xa đang mở: $(cat "$STATE/remote_conns" 2>/dev/null | grep -c .)
+$(cat "$STATE/posture_now" 2>/dev/null)
+Firewall: $(cat "$STATE/firewall" 2>/dev/null) | Gatekeeper: $(cat "$STATE/gatekeeper" 2>/dev/null)
+(Ngày nào không thấy báo cáo này → kiểm tra máy)"
 }
 
 # ---------------------------------------------------------------- 5. phần cứng & mạng (mỗi 10 giây)
@@ -283,7 +420,8 @@ Lúc: $(now)
 
   check_remote "$t"
   [ $((tick % 5)) -eq 0 ] && { check_system; check_hardware; }
-  [ $((tick % 15)) -eq 0 ] && check_listen
+  [ $((tick % 15)) -eq 0 ] && { check_listen; check_files; }
+  [ $((tick % 30)) -eq 0 ] && { check_persistence; check_posture; daily_report; }
   tick=$((tick + 1))
 
   sleep 2 & wait $!   # wait để trap TERM chạy ngay, không đợi hết sleep

@@ -6,7 +6,7 @@ APP="build/MacSentry.app"
 rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
 swiftc -O -o "$APP/Contents/MacOS/MacSentry" Sources/main.swift \
-  -framework AppKit -framework SwiftUI -framework UserNotifications 2>&1 | grep -v "^$" || true
+  -framework AppKit -framework SwiftUI -framework UserNotifications -framework CoreAudio -framework CoreMediaIO 2>&1 | grep -v "^$" || true
 test -x "$APP/Contents/MacOS/MacSentry"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
@@ -33,6 +33,9 @@ codesign --force --deep -s "${SIGN_ID:--}" "$APP"
 
 DEST="$HOME/Applications/MacSentry.app"
 mkdir -p "$HOME/Applications"
+# Gỡ job launchd trước khi thay app (job có KeepAlive, kill thường sẽ bị chạy lại ngay)
+launchctl bootout "gui/$(id -u)/io.github.vuminhhoa.macsentry" 2>/dev/null || true
 pkill -x MacSentry || true
 rm -rf "$DEST" && cp -R "$APP" "$DEST"
-echo "Đã cài: $DEST"
+open "$DEST"   # app tự giao lại cho launchd
+echo "Đã cài và chạy: $DEST"

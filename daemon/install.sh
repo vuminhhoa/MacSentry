@@ -16,8 +16,11 @@ install -o root -g wheel -m 755 macsentryd.sh /usr/local/libexec/macsentryd
 chmod 700 /var/db/macsentry
 
 # Log: ai cũng đọc được (app hiển thị tab "Sự kiện"), chỉ root ghi, và chỉ được ghi thêm
-touch /var/log/macsentry.log; chown root:wheel /var/log/macsentry.log; chmod 644 /var/log/macsentry.log
-chflags sappnd /var/log/macsentry.log
+# (Chỉ làm lần đầu: file đã có cờ sappnd thì touch/chmod đều bị từ chối, kể cả root)
+if [ ! -e /var/log/macsentry.log ]; then
+  touch /var/log/macsentry.log; chown root:wheel /var/log/macsentry.log; chmod 644 /var/log/macsentry.log
+  chflags sappnd /var/log/macsentry.log
+fi
 
 cat > /Library/LaunchDaemons/$LABEL.plist <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
@@ -32,6 +35,12 @@ cat > /Library/LaunchDaemons/$LABEL.plist <<PLIST
 PLIST
 chown root:wheel /Library/LaunchDaemons/$LABEL.plist; chmod 644 /Library/LaunchDaemons/$LABEL.plist
 
+# bootout trả về ngay nhưng daemon cũ còn gửi tin 🔴 trước khi thoát → chờ nó dừng hẳn rồi mới bootstrap
 launchctl bootout system/$LABEL 2>/dev/null || true
-launchctl bootstrap system /Library/LaunchDaemons/$LABEL.plist
-echo "Đã cài macsentryd. Log: /var/log/macsentry.log"
+for i in $(seq 1 20); do launchctl print system/$LABEL >/dev/null 2>&1 || break; sleep 1; done
+for i in 1 2 3 4 5; do
+  launchctl bootstrap system /Library/LaunchDaemons/$LABEL.plist 2>/dev/null && break
+  [ $i = 5 ] && { echo "Không khởi động được daemon"; exit 1; }
+  sleep 2
+done
+launchctl print system/$LABEL | grep -q "state = running" && echo "Đã cài và chạy macsentryd. Log: /var/log/macsentry.log"
