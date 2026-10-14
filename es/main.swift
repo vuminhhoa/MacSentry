@@ -96,12 +96,43 @@ func pid(_ p: JSON?) -> Int? { int(p, "audit_token", "pid") }
 func path(_ p: JSON?) -> String { str(p, "executable", "path") ?? "?" }
 func base(_ s: String) -> String { (s as NSString).lastPathComponent }
 
-func run(_ exe: String, _ args: [String]) -> String {
-    let p = Process(); p.executableURL = URL(fileURLWithPath: exe); p.arguments = args
-    let out = Pipe(); p.standardOutput = out; p.standardError = FileHandle.nullDevice
-    do { try p.run() } catch { return "" }
-    let d = out.fileHandleForReading.readDataToEndOfFile(); p.waitUntilExit()
-    return String(decoding: d, as: UTF8.self).trimmingCharacters(in: .whitespacesAndNewlines)
+// Thông tin tiến trình qua libproc / sysctl — không fork `ps` (helper tra chuỗi cha rất thường xuyên)
+
+/// Tên ngắn và pid cha của tiến trình (nil nếu đã thoát)
+func procInfo(_ pid: Int) -> (name: String, ppid: Int)? {
+    var info = proc_bsdinfo()
+    let size = Int32(MemoryLayout<proc_bsdinfo>.size)
+    guard proc_pidinfo(Int32(pid), PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+    // pbi_name (32 ký tự) đầy đủ hơn pbi_comm (16 ký tự)
+    var name = withUnsafeBytes(of: info.pbi_name) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
+    if name.isEmpty { name = withUnsafeBytes(of: info.pbi_comm) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) } }
+    return (name, Int(info.pbi_ppid))
+}
+
+/// Dòng lệnh đầy đủ (argv) của tiến trình, đọc từ KERN_PROCARGS2: [argc][đường dẫn exec]\0…\0[argv0]\0[argv1]\0…
+func procArgs(_ pid: Int) -> String {
+    var mib: [Int32] = [CTL_KERN, KERN_PROCARGS2, Int32(pid)]
+    var size = 0
+    guard sysctl(&mib, 3, nil, &size, nil, 0) == 0, size > 4 else { return "" }
+    var buf = [UInt8](repeating: 0, count: size)
+    guard sysctl(&mib, 3, &buf, &size, nil, 0) == 0 else { return "" }
+    let argc = buf.withUnsafeBytes { $0.load(as: Int32.self) }
+    var i = 4
+    while i < size && buf[i] != 0 { i += 1 }   // bỏ đường dẫn exec
+    while i < size && buf[i] == 0 { i += 1 }   // và phần đệm
+    var args: [String] = []
+    while args.count < argc && i < size {
+        var j = i
+        while j < size && buf[j] != 0 { j += 1 }
+        args.append(String(decoding: buf[i..<j], as: UTF8.self))
+        i = j + 1
+    }
+    return args.joined(separator: " ")
+}
+
+func userName(_ uid: Int) -> String {
+    guard let pw = getpwuid(uid_t(uid)) else { return "\(uid)" }
+    return String(cString: pw.pointee.pw_name)
 }
 
 /// Chuỗi tiến trình cha (tên(pid) ← …), tối đa 6 cấp, kèm dòng lệnh đầy đủ của từng cấp (để nhận diện
@@ -110,14 +141,11 @@ func ancestry(_ start: Int?) -> (text: String, commands: [String]) {
     guard var p = start else { return ("?", []) }
     var parts: [String] = [], cmds: [String] = []
     for _ in 0..<6 {
-        let line = run("/bin/ps", ["-o", "ppid=,comm=", "-p", "\(p)"])
-        guard !line.isEmpty else { break }
-        let f = line.split(separator: " ", maxSplits: 1).map(String.init)
-        guard f.count == 2, let pp = Int(f[0]) else { break }
-        parts.append("\(base(f[1].trimmingCharacters(in: .whitespaces)))(\(p))")
-        cmds.append(run("/bin/ps", ["-o", "command=", "-p", "\(p)"]))
-        if pp <= 1 { break }
-        p = pp
+        guard let info = procInfo(p) else { break }
+        parts.append("\(info.name)(\(p))")
+        cmds.append(procArgs(p))
+        if info.ppid <= 1 { break }
+        p = info.ppid
     }
     return (parts.isEmpty ? "?" : parts.joined(separator: " ← "), cmds)
 }
@@ -246,24 +274,34 @@ func onExec(_ e: JSON, _ msg: JSON) {
     if anc.commands.contains(where: { $0.contains("/usr/local/libexec/macsentry") }) { return }
     if rule.selfRelated && FileManager.default.fileExists(atPath: stateDir + "/updating") { return }
     if allowed("\(cmd) || \(parents)") {
-        spool(.log, "\(rule.name) (trong danh sách cho phép): \(cmd.prefix(200)) — \(parents)")
+        // Lệnh được cho phép thường lặp liên tục (vd Claude Code đọc keychain) → ghi log mỗi giờ 1 lần, tránh phình log
+        if throttle("allowed_\(rule.name)_\(cmd.prefix(120))", 3600) {
+            spool(.log, "\(rule.name) (trong danh sách cho phép, lặp lại trong 1 giờ không ghi): \(cmd.prefix(200)) — \(parents)")
+        }
         return
     }
     guard throttle("exec_\(rule.name)_\(cmd.prefix(120))", 60) else { return }
     spool(rule.level, """
         \(rule.name)
         Lệnh: \(String(cmd.prefix(400)))
-        User: \(str(target, "audit_token", "euid").flatMap { Int($0) }.map { run("/usr/bin/id", ["-un", "\($0)"]) } ?? "?")
+        User: \(int(target, "audit_token", "euid").map(userName) ?? "?")
         Tiến trình cha: \(parents)
         """)
 }
 
 /// `exes`: quy tắc chỉ xét khi chính chương trình được chạy có tên này (nil = mọi chương trình trừ curl/wget...).
 /// Nhờ vậy chữ "security find-generic-password" nằm trong NỘI DUNG tin nhắn mà curl gửi đi không bị tính là lệnh.
-struct Rule { let name: String; let level: Level; let regex: NSRegularExpression; let exes: Set<String>?; let selfRelated: Bool }
-func rule(_ name: String, _ level: Level, _ exes: Set<String>?, _ pattern: String, selfRelated: Bool = false) -> Rule {
+/// `needles`: chuỗi mà dòng JSON thô của sự kiện PHẢI chứa thì quy tắc mới có thể khớp — dùng để bỏ qua việc
+/// parse JSON cho hầu hết sự kiện exec (mặc định: `<tên chương trình>"`, khớp cả "path":"/usr/bin/x" lẫn args "x").
+/// Lưu ý: dòng exec có cả biến môi trường (PATH...) → tránh needle chung chung như "curl", "exec".
+struct Rule {
+    let name: String; let level: Level; let regex: NSRegularExpression; let exes: Set<String>?; let selfRelated: Bool
+    let needles: [String]
+}
+func rule(_ name: String, _ level: Level, _ exes: Set<String>?, _ pattern: String,
+          needles: [String]? = nil, selfRelated: Bool = false) -> Rule {
     Rule(name: name, level: level, regex: try! NSRegularExpression(pattern: pattern, options: [.caseInsensitive]),
-         exes: exes, selfRelated: selfRelated)
+         exes: exes, selfRelated: selfRelated, needles: needles ?? (exes ?? []).map { "\($0)\"" })
 }
 let shells: Set<String> = ["sh", "bash", "zsh", "dash", "ksh", "tcsh", "csh", "fish"]
 let interpreters: Set<String> = shells.union(["nc", "ncat", "netcat", "socat", "mkfifo", "perl", "ruby", "php", "lua",
@@ -273,7 +311,9 @@ let dataCarriers: Set<String> = ["curl", "wget", "http", "xh", "echo", "printf",
 
 let rules: [Rule] = [
     rule("☠️ Lệnh REVERSE SHELL", .alert, interpreters,
-         #"/dev/(tcp|udp)/|\bnc(at)?\b.*\s-(e|c)\s|\bncat\b.*--(sh-)?exec\b|socat\b.*exec:|\b(ba|z)?sh\s+-i\b.*>&|pty\.spawn|socket\.socket\(.*connect|fsockopen\(|TCPSocket\.(new|open)|mkfifo\b.*\bnc\b"#),
+         #"/dev/(tcp|udp)/|\bnc(at)?\b.*\s-(e|c)\s|\bncat\b.*--(sh-)?exec\b|socat\b.*exec:|\b(ba|z)?sh\s+-i\b.*>&|pty\.spawn|socket\.socket\(.*connect|fsockopen\(|TCPSocket\.(new|open)|mkfifo\b.*\bnc\b"#,
+         needles: ["/dev/tcp/", "/dev/udp/", "pty", "socket", "fsockopen", "TCPSocket", "mkfifo",
+                   "nc\"", "ncat\"", "netcat\"", "socat\""]),
     rule("🔑 Lệnh đọc mật khẩu trong Keychain", .alert, ["security"],
          #"(^|/)security\s+(dump-keychain|(find-generic-password|find-internet-password)\b.*\s-[wg]\b|export\b)"#),
     rule("🛡 Lệnh TẮT lớp bảo vệ của macOS", .alert, ["spctl", "csrutil", "tccutil", "socketfilterfw", "pfctl", "nvram", "log", "chflags"],
@@ -288,10 +328,67 @@ let rules: [Rule] = [
     rule("🎣 Hộp thoại giả hỏi mật khẩu (osascript)", .alert, ["osascript"],
          #"(hidden answer|password)"#),
     rule("📥 Tải script từ Internet rồi chạy ngay", .info, shells,
-         #"(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z)?sh\b|\$\((curl|wget)\b"#),
+         #"(curl|wget)\b[^|]*\|\s*(sudo\s+)?(ba|z)?sh\b|\$\((curl|wget)\b"#, needles: ["| sh", "|sh", "| bash", "|bash", "| zsh", "|zsh", "| sudo", "|sudo", "$(curl", "$(wget"]),
     rule("🏷 Gỡ cờ quarantine (bỏ qua kiểm tra Gatekeeper)", .info, ["xattr"],
          #"-(d|c|rd|dr)\b.*com\.apple\.quarantine|(^|/)xattr\s+-c\b"#),
 ]
+
+/// Aho–Corasick dạng DFA (không phân biệt hoa thường ASCII): tìm NHIỀU chuỗi cùng lúc trong MỘT lượt quét.
+/// Thay cho việc gọi memmem cho từng chuỗi (42 chuỗi × 4 KB mỗi dòng exec → quét lại dữ liệu 42 lần).
+struct MultiMatcher {
+    private let table: [Int32]   // trạng thái * 256 + byte → trạng thái kế tiếp
+    private let accept: [Bool]   // trạng thái kết thúc một chuỗi nào đó
+
+    init(_ patterns: [String]) {
+        var go: [[Int32]] = [Array(repeating: -1, count: 256)]
+        var acc = [false]
+        for pat in patterns where !pat.isEmpty {   // 1) cây tiền tố
+            var st = 0
+            for b in pat.lowercased().utf8.map(Int.init) {
+                if go[st][b] < 0 { go.append(Array(repeating: -1, count: 256)); acc.append(false); go[st][b] = Int32(go.count - 1) }
+                st = Int(go[st][b])
+            }
+            acc[st] = true
+        }
+        var fail = Array(repeating: 0, count: go.count), queue: [Int] = []   // 2) liên kết thất bại theo BFS
+        for b in 0..<256 {
+            if go[0][b] < 0 { go[0][b] = 0 } else { queue.append(Int(go[0][b])) }
+        }
+        var qi = 0
+        while qi < queue.count {
+            let st = queue[qi]; qi += 1
+            acc[st] = acc[st] || acc[fail[st]]
+            for b in 0..<256 {
+                let t = go[st][b]
+                if t < 0 { go[st][b] = go[fail[st]][b] } else { fail[Int(t)] = Int(go[fail[st]][b]); queue.append(Int(t)) }
+            }
+        }
+        for st in go.indices { for b in 65...90 { go[st][b] = go[st][b + 32] } }   // 3) A-Z đi như a-z
+        table = go.flatMap { $0 }; accept = acc
+    }
+
+    func matches(_ hay: UnsafeRawBufferPointer) -> Bool {
+        table.withUnsafeBufferPointer { t in
+            accept.withUnsafeBufferPointer { a in
+                var st = 0
+                for byte in hay {
+                    st = Int(t[st &* 256 &+ Int(byte)])
+                    if a[st] { return true }
+                }
+                return false
+            }
+        }
+    }
+}
+
+// Thêm biến thể "\/" cho chuỗi có "/" phòng khi JSON escape dấu gạch chéo (vd "\/dev\/tcp\/")
+let needleMatcher = MultiMatcher(Array(Set(rules.flatMap(\.needles).flatMap { [$0, $0.replacingOccurrences(of: "/", with: "\\/")] })))
+let execMarker = Array(#"{"exec":"#.utf8)
+/// Dòng exec không chứa chuỗi bắt buộc của quy tắc nào → bỏ qua, không cần parse JSON (đa số sự kiện)
+func execIrrelevant(_ hay: UnsafeRawBufferPointer) -> Bool {
+    let isExec = execMarker.withUnsafeBytes { memmem(hay.baseAddress, hay.count, $0.baseAddress, $0.count) != nil }
+    return isExec && !needleMatcher.matches(hay)
+}
 
 func suspicious(exe: String, cmd: String) -> Rule? {
     let name = base(exe)
@@ -363,19 +460,37 @@ func sample(_ type: String, _ line: Data) {
     FileManager.default.createFile(atPath: "\(samplesDir)/\(type).json", contents: line, attributes: [.posixPermissions: 0o600])
 }
 
-var lastAlive = Date.distantPast
-func handle(_ line: Data) {
-    if Date().timeIntervalSince(lastAlive) > 30 { touch(stateDir + "/es_alive"); lastAlive = Date() }
+var lastAlive: time_t = 0
+func handle(_ raw: UnsafeRawBufferPointer) {
+    let now = time(nil)
+    if now - lastAlive > 30 { touch(stateDir + "/es_alive"); lastAlive = now }
+    if execIrrelevant(raw) { return }   // lọc trên buffer thô, chưa cấp phát gì
+    let line = Data(raw)
     guard let msg = (try? JSONSerialization.jsonObject(with: line)) as? JSON,
           let ev = msg["event"] as? JSON, let type = ev.keys.first, let e = ev[type] as? JSON else { return }
     sample(type, line)
     onEvent(type, e, msg)
 }
 
+/// Đọc từng dòng bằng getline(3): đệm ở user space và tái dùng một buffer cho mọi dòng — nhanh hơn hàng chục lần
+/// so với FileHandle.availableData + Data.removeSubrange (O(n) mỗi dòng) hay readLine() tạo String mỗi dòng
+func forEachLine(fd: Int32, _ body: (UnsafeRawBufferPointer) -> Void) {
+    guard let fp = fdopen(dup(fd), "r") else { return }   // dup: fclose không đóng fd của Pipe
+    var line: UnsafeMutablePointer<CChar>? = nil
+    var cap = 0
+    defer { free(line); fclose(fp) }
+    while true {
+        var len = getline(&line, &cap, fp)
+        if len < 0 { break }   // EOF / lỗi
+        if len > 0 && line![len - 1] == 0x0A { len -= 1 }
+        if len > 0 { body(UnsafeRawBufferPointer(start: line, count: len)) }
+    }
+}
+
 for d in [spoolDir, samplesDir] { try? FileManager.default.createDirectory(atPath: d, withIntermediateDirectories: true) }
 // Chạy thử không cần root: STATE=./thu-muc macsentry-es --replay < su-kien.jsonl
 if CommandLine.arguments.contains("--replay") {
-    while let l = readLine(strippingNewline: true) { if !l.isEmpty { handle(Data(l.utf8)) } }
+    forEachLine(fd: 0, handle)
     exit(0)
 }
 guard getuid() == 0 else { FileHandle.standardError.write(Data("macsentry-es cần chạy bằng root\n".utf8)); exit(1) }
@@ -385,14 +500,17 @@ while true {
     let p = Process()
     p.executableURL = URL(fileURLWithPath: "/usr/bin/eslogger")
     p.arguments = events
-    let out = Pipe(), err = Pipe()
-    p.standardOutput = out; p.standardError = err
+    // stderr ghi ra file (không dùng Pipe: không ai đọc trong lúc chạy → pipe đầy sẽ làm eslogger treo)
+    let errPath = stateDir + "/eslogger.err"
+    FileManager.default.createFile(atPath: errPath, contents: nil)
+    let out = Pipe()
+    p.standardOutput = out; p.standardError = FileHandle(forWritingAtPath: errPath)
     do { try p.run() } catch {
         writeStatus("Không chạy được /usr/bin/eslogger: \(error.localizedDescription)")
         sleep(60); continue
     }
     writeStatus("eslogger đang chạy (pid \(p.processIdentifier)) từ \(Date())")
-    touch(stateDir + "/es_alive"); lastAlive = Date()
+    touch(stateDir + "/es_alive"); lastAlive = time(nil)
 
     // eslogger sống mà không có sự kiện nào (máy rảnh) vẫn phải được coi là còn sống
     let keepAlive = DispatchSource.makeTimerSource(queue: .global())
@@ -400,21 +518,10 @@ while true {
     keepAlive.setEventHandler { if p.isRunning { touch(stateDir + "/es_alive") } }
     keepAlive.resume()
 
-    let h = out.fileHandleForReading
-    var buf = Data()
-    while true {
-        let chunk = h.availableData
-        if chunk.isEmpty { break }   // EOF: eslogger đã thoát
-        buf.append(chunk)
-        while let nl = buf.firstIndex(of: 0x0A) {
-            let line = buf.subdata(in: buf.startIndex..<nl)
-            buf.removeSubrange(buf.startIndex...nl)
-            if !line.isEmpty { handle(line) }
-        }
-    }
+    forEachLine(fd: out.fileHandleForReading.fileDescriptor, handle)   // trả về khi eslogger thoát (EOF)
     keepAlive.cancel()
     p.waitUntilExit()
-    let why = String(decoding: err.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+    let why = ((try? String(contentsOfFile: errPath, encoding: .utf8)) ?? "")
         .trimmingCharacters(in: .whitespacesAndNewlines)
     let status = "eslogger dừng (mã \(p.terminationStatus)) lúc \(Date()): \(why.prefix(300))"
     writeStatus(why.localizedCaseInsensitiveContains("permit") || why.contains("TCC")

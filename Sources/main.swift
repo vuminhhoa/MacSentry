@@ -116,7 +116,7 @@ final class Monitor: ObservableObject {
         saveHistory()
         startHelper()
         poll(initial: true)
-        let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.poll(initial: false) }
+        let t = Timer(timeInterval: 2, repeats: true) { [weak self] _ in self?.pollAsync() }
         RunLoop.main.add(t, forMode: .common) // vẫn chạy khi đang mở menu / popup
         timer = t
     }
@@ -204,8 +204,21 @@ final class Monitor: ObservableObject {
         return Array(result.values)
     }
 
-    func poll(initial: Bool) {
-        let found = scan()
+    /// Quét ở luồng nền (chạy `who`, đọc file netstat — không chặn giao diện), cập nhật trạng thái ở luồng chính.
+    /// Bỏ lượt nếu lượt trước chưa xong (máy bận) để các lượt quét không chồng lên nhau.
+    private var scanning = false
+    func pollAsync() {
+        guard !scanning else { return }
+        scanning = true
+        DispatchQueue.global(qos: .utility).async {
+            let found = self.scan()
+            DispatchQueue.main.async { self.apply(found, initial: false); self.scanning = false }
+        }
+    }
+
+    func poll(initial: Bool) { apply(scan(), initial: initial) }
+
+    private func apply(_ found: [RemoteConnection], initial: Bool) {
         let oldById = Dictionary(uniqueKeysWithValues: active.map { ($0.id, $0) })
         var newActive: [RemoteConnection] = []
         var changed = false
@@ -366,9 +379,16 @@ final class ViewState: ObservableObject {
     @Published var filter = ""
     @Published var events: [String] = []
 
-    /// Đọc log sự kiện của daemon (mới nhất lên đầu)
+    /// Đọc log sự kiện của daemon (mới nhất lên đầu). Log chỉ được ghi thêm, không xoay vòng → có thể rất lớn,
+    /// nên chỉ đọc ~1 MB cuối file.
     func loadEvents() {
-        let s = (try? String(contentsOfFile: Store.daemonLogPath, encoding: .utf8)) ?? ""
+        guard let h = FileHandle(forReadingAtPath: Store.daemonLogPath) else { events = []; return }
+        defer { try? h.close() }
+        let size = (try? h.seekToEnd()) ?? 0
+        let start = size > 1_000_000 ? size - 1_000_000 : 0
+        try? h.seek(toOffset: start)
+        var s = String(decoding: h.readDataToEndOfFile(), as: UTF8.self)
+        if start > 0, let nl = s.firstIndex(of: "\n") { s = String(s[s.index(after: nl)...]) }   // bỏ dòng bị cắt dở
         events = s.split(separator: "\n").suffix(2000).reversed().map(String.init)
     }
 }
@@ -467,7 +487,8 @@ struct ContentView: View {
                 Text("Chưa cài macsentryd — chạy: sudo ~/MacSentry/daemon/install.sh")
                     .font(.caption).foregroundStyle(.orange)
             }
-            List(filteredEvents, id: \.self) { Text($0).font(.system(.body, design: .monospaced)).textSelection(.enabled) }
+            // id theo vị trí: log có thể có các dòng trùng nhau (cùng nội dung, cùng giây) → id: \.self làm SwiftUI nhầm hàng
+            List(Array(filteredEvents.enumerated()), id: \.offset) { Text($0.element).font(.system(.body, design: .monospaced)).textSelection(.enabled) }
         }
         .onAppear { ui.loadEvents() }
     }

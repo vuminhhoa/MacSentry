@@ -55,6 +55,7 @@ send_now() { log "$1"; post "$1" 5 false >/dev/null; }
 
 # Chống spam: trả về 0 nếu khoá $1 chưa gửi trong $2 giây gần đây
 throttle() {
+  local f t l
   f="$STATE/throttle/$(printf '%s' "$1" | cksum | cut -d' ' -f1)"
   t=$(date +%s); l=$(cat "$f" 2>/dev/null || echo 0)
   [ $((t - l)) -ge "$2" ] || return 1
@@ -62,11 +63,12 @@ throttle() {
 }
 
 # Helper Endpoint Security (macsentry-es) còn sống: nó chạm file này mỗi phút khi eslogger đang chạy được
-es_alive() { f="$STATE/es_alive"; [ -f "$f" ] && [ $(( $(date +%s) - $(stat -f %m "$f") )) -lt 180 ]; }
+es_alive() { local f="$STATE/es_alive"; [ -f "$f" ] && [ $(( $(date +%s) - $(stat -f %m "$f") )) -lt 180 ]; }
 
 # Hàng đợi tin nhắn: helper ghi file "<alert|info>\n<nội dung>" vào đây, daemon gửi đi (helper không cần token)
 SPOOL="$STATE/spool"
 check_spool() {
+  local f level body
   for f in "$SPOOL"/*.msg; do
     [ -f "$f" ] || continue
     level=$(head -1 "$f"); body=$(tail -n +2 "$f"); rm -f "$f"
@@ -76,6 +78,7 @@ check_spool() {
 
 # In phần mới ghi thêm vào file $2 kể từ lần gọi trước (lần đầu chỉ ghi mốc). $1 = tên state.
 tail_new() {
+  local f size off
   f="$STATE/tail_$1"; size=$(stat -f %z "$2" 2>/dev/null) || return 0
   off=$(cat "$f" 2>/dev/null); echo "$size" > "$f"
   [ -n "$off" ] || return 0
@@ -88,7 +91,7 @@ mask_secrets() {
   sed -E 's/((KEY|TOKEN|SECRET|PASS|PASSWORD|PWD|AUTH|CREDENTIAL)[A-Za-z0-9_]*[[:space:]]*[=:][[:space:]]*).*/\1***/I'
 }
 
-dur() { s=$1; if [ $s -lt 60 ]; then echo "${s}s"; elif [ $s -lt 3600 ]; then echo "$((s/60))m $((s%60))s"; else echo "$((s/3600))h $((s%3600/60))m"; fi; }
+dur() { local s=$1; if [ $s -lt 60 ]; then echo "${s}s"; elif [ $s -lt 3600 ]; then echo "$((s/60))m $((s%60))s"; else echo "$((s/3600))h $((s%3600/60))m"; fi; }
 
 port_name() {
   case $1 in
@@ -101,6 +104,7 @@ REMOTE_PORTS_RE='^(22|5900|3283|445|548|3031)$'
 # So sánh danh sách mới ($2) với danh sách đã lưu ($1). Lần đầu chỉ lưu làm mốc, không báo.
 # In ra các dòng "+ ..." (mới) và "- ..." (mất).
 diff_state() {
+  local f
   f="$STATE/$1"
   # $3 = "nonempty": danh sách không bao giờ rỗng thật (user, app, ...) → rỗng nghĩa là lệnh lỗi, bỏ qua lần này
   if [ "$3" = nonempty ] && [ -z "$(printf '%s' "$2" | tr -d '[:space:]')" ]; then return; fi
@@ -115,17 +119,30 @@ diff_state() {
 # In ra "changed|new|removed <path>" (lần đầu chỉ lưu mốc).
 # $2 là danh sách mỗi dòng một file (đường dẫn được phép có dấu cách)
 hash_changes() {
+  local sums
   sums=$(printf '%s\n' "$2" | while IFS= read -r f; do
            [ -f "$f" ] && printf '%s %s\n' "$(shasum -a 256 "$f" 2>/dev/null | cut -c1-16)" "$f"; done)
   diff_state "$1" "$sums" | awk '{ sign = $1; f = substr($0, length($1) + length($2) + 3); s[f] = s[f] sign } END {
       for (f in s) print (length(s[f]) == 2 ? "changed" : (s[f] == "+" ? "new" : "removed")), f }'
 }
+# Trả về 0 nếu danh sách file $2 (mỗi dòng một file) có thay đổi về ctime / kích thước / thành phần
+# (ctime: mọi lần ghi hay đổi metadata đều cập nhật, không đặt lại được bằng touch như mtime)
+# so với lần gọi trước cùng khoá $1 — dùng để bỏ qua việc băm (shasum) khi không có gì đổi.
+stat_changed() {
+  local f sig
+  f="$STATE/statsig_$1"
+  sig=$(printf '%s\n' "$2" | tr '\n' '\0' | xargs -0 stat -f '%c %z %N' 2>/dev/null)
+  [ -f "$f" ] && [ "$sig" = "$(cat "$f")" ] && return 1
+  printf '%s\n' "$sig" > "$f"
+}
+
 copy_of() { echo "$STATE/files/$(printf '%s' "$1" | tr '/' '_')"; }
 
 # ---------------------------------------------------------------- chi tiết để phân biệt cảnh báo thật / giả
 
 # Chữ ký số của file thực thi / app: Apple, nhà phát hành (Team ID), hay không ký
 sig_of() {
+  local out auth team
   [ -e "$1" ] || { echo "? (không tìm thấy file)"; return; }
   out=$(codesign -dv --verbose=2 "$1" 2>&1)
   case $out in *"not signed"*) echo "⚠️ KHÔNG có chữ ký số"; return ;; esac
@@ -140,6 +157,7 @@ sig_of() {
 
 # Mô tả tiến trình: dòng lệnh, user, thời điểm chạy, chuỗi tiến trình cha, chữ ký số
 proc_info() {
+  local p cmd exe chain q n i
   p=$1
   cmd=$(ps -o command= -p "$p" 2>/dev/null | cut -c1-300)
   [ -n "$cmd" ] || { echo "(tiến trình $p đã kết thúc trước khi kịp ghi chi tiết)"; return; }
@@ -156,6 +174,7 @@ proc_info() {
 
 # Thông tin IP: tên miền (reverse DNS) và chủ sở hữu (whois) — có thể mất vài giây, gọi trong tiến trình nền
 ip_info() {
+  local ip name org
   ip=$1
   case $ip in 10.*|192.168.*|172.1[6-9].*|172.2[0-9].*|172.3[01].*|100.6[4-9].*|100.[7-9][0-9].*|100.1[01][0-9].*|100.12[0-7].*|fe80:*|fd*)
     echo "IP mạng nội bộ / Tailscale"; return ;; esac
@@ -168,6 +187,7 @@ ip_info() {
 # Máy chủ tin cậy (/etc/macsentry.trusted, dạng "tên-miền:cổng" hoặc "tên-miền"): phân giải thành "ip:cổng tên"
 TRUSTED=${TRUSTED:-/etc/macsentry.trusted}
 resolve_trusted() {
+  local entry h port ips ip
   sed 's/#.*//' "$TRUSTED" 2>/dev/null | while read -r entry; do
     [ -n "$entry" ] || continue
     h=${entry%%:*}; port=${entry#*:}; [ "$port" = "$entry" ] && port="*"
@@ -178,6 +198,7 @@ resolve_trusted() {
 }
 # $1 = "ip:cổng" → in tên máy chủ nếu tin cậy
 trusted_name() {
+  local ip port
   ip=${1%:*}; ip=${ip#[}; ip=${ip%]}; port=${1##*:}
   awk -v ip="$ip" -v port="$port" '{ split($1, a, ":"); p = a[length(a)]; sub(":[^:]*$", "", $1)
        if ($1 == ip && (p == port || p == "*")) { print $2; exit } }' "$STATE/trusted_resolved" 2>/dev/null
@@ -454,6 +475,8 @@ check_files() {
   FILES_V=2
   [ "$(cat "$STATE/files_v" 2>/dev/null)" = "$FILES_V" ] || { rm -f "$STATE/filesums"; echo "$FILES_V" > "$STATE/files_v"; }
   first=0; [ -f "$STATE/filesums" ] || first=1
+  # Băm ~30 file mỗi lần tốn ~0,4 giây → chỉ băm khi ctime / kích thước / danh sách file đổi
+  stat_changed files "$list" || [ $first = 1 ] || return 0
   changes=$(hash_changes filesums "$list")
   if [ $first = 1 ]; then for f in $list; do cp "$f" "$(copy_of "$f")" 2>/dev/null; done; return; fi
   printf '%s\n' "$changes" | while read -r kind f; do
@@ -482,11 +505,16 @@ $(diff "$copy" "$f" 2>/dev/null | grep '^[<>]' | head -15 | mask_secrets | cut -
 
 check_persistence() {
   # Login Items / Background Items đăng ký qua SMAppService (loại "legacy" = plist, đã theo dõi ở check_system)
-  btm=$(sfltool dumpbtm 2>/dev/null | awk -F': ' '/^ *Type:/ { t = $2 } /^ *Identifier:/ {
-          if (t !~ /^(developer|app|legacy)/) print t " | " $2 }' | sort -u)
-  diff_state btm "$btm" nonempty | while read -r sign rest; do
-    [ "$sign" = "+" ] && alert "🧩 Mục chạy nền / Login Item mới: $rest" || info "🧩 Đã gỡ mục chạy nền: $rest"
-  done
+  # sfltool tốn ~3 giây → chỉ chạy khi file DB Background Items đổi (hoặc mỗi giờ một lần cho chắc)
+  btm_sig="$(stat -f '%c %z %N' /private/var/db/com.apple.backgroundtaskmanagement/* 2>/dev/null) $(( $(date +%s) / 3600 ))"
+  if [ "$btm_sig" != "$(cat "$STATE/btm_sig" 2>/dev/null)" ]; then
+    echo "$btm_sig" > "$STATE/btm_sig"
+    btm=$(sfltool dumpbtm 2>/dev/null | awk -F': ' '/^ *Type:/ { t = $2 } /^ *Identifier:/ {
+            if (t !~ /^(developer|app|legacy)/) print t " | " $2 }' | sort -u)
+    diff_state btm "$btm" nonempty | while read -r sign rest; do
+      [ "$sign" = "+" ] && alert "🧩 Mục chạy nền / Login Item mới: $rest" || info "🧩 Đã gỡ mục chạy nền: $rest"
+    done
+  fi
 
   # Bỏ profile Screen Time (com.apple.ManagedSettings.*): macOS tự tạo/xoá khi đổi cài đặt Screen Time
   profs=$(profiles list -all 2>/dev/null | sed -n 's/.*profileIdentifier: //p' | grep -v '^com\.apple\.ManagedSettings\.')
@@ -637,7 +665,7 @@ $(cat "$STATE/es_status" 2>/dev/null || echo "Helper macsentry-es không chạy"
   self=$(ls -1d /usr/local/libexec/macsentryd /Library/LaunchDaemons/io.github.vuminhhoa.macsentry.daemon.plist /etc/macsentry.conf "$TRUSTED" \
          /usr/local/libexec/macsentry-es /Library/LaunchDaemons/io.github.vuminhhoa.macsentry.es.plist \
          /Users/*/Applications/MacSentry.app/Contents/MacOS/MacSentry 2>/dev/null)
-  hash_changes selfsums "$self" | while read -r kind f; do
+  stat_changed self "$self" && hash_changes selfsums "$self" | while read -r kind f; do
     [ -n "$f" ] || continue
     case $kind in
       removed) alert "🧬 File của MacSentry bị XOÁ: $f" ;;
@@ -741,7 +769,7 @@ Tiến trình đang chạy: $(echo $run)"
   mkdir -p "$STATE/files"
   wfiles=$(ls -1d "$conf" "$lio" "$WZ/etc/internal_options.conf" "$WZ/etc/shared/agent.conf" "$WZ/etc/client.keys" \
            /Library/LaunchDaemons/com.wazuh.agent.plist /Library/StartupItems/WAZUH/* 2>/dev/null)
-  hash_changes wazuh_cfg "$wfiles" | while read -r kind f; do
+  stat_changed wazuh_cfg "$wfiles" && hash_changes wazuh_cfg "$wfiles" | while read -r kind f; do
     [ -n "$f" ] || continue
     copy=$(copy_of "$f")
     case $kind:$f in
@@ -759,7 +787,8 @@ $(diff "$copy" "$f" 2>/dev/null | grep '^[<>]' | head -20 | mask_secrets | cut -
   for f in $wfiles; do case $f in */client.keys) ;; *) [ -f "$(copy_of "$f")" ] || cp "$f" "$(copy_of "$f")" 2>/dev/null ;; esac; done
 
   # File thực thi của Wazuh và script active response bị thay (cập nhật Wazuh hợp lệ cũng báo, kèm phiên bản)
-  hash_changes wazuh_bin "$(ls -1d "$WZ"/bin/* "$WZ"/active-response/bin/* 2>/dev/null)" | while read -r kind f; do
+  wbins=$(ls -1d "$WZ"/bin/* "$WZ"/active-response/bin/* 2>/dev/null)
+  stat_changed wazuh_bin "$wbins" && hash_changes wazuh_bin "$wbins" | while read -r kind f; do
     [ -n "$f" ] || continue
     case $f in
       */active-response/bin/*) alert "🐺 Script active response của Wazuh $kind: $f
@@ -837,7 +866,7 @@ check_agents() {
   # Cấu hình agent: so bản dạng chữ (plist nhị phân → plutil -p)
   mkdir -p "$STATE/files"
   cfgl=$(sed -n 's/^cfg|//p' "$STATE/agents_scan" | sort -u)
-  hash_changes agent_cfg "$cfgl" | while read -r kind f; do
+  stat_changed agent_cfg "$cfgl" && hash_changes agent_cfg "$cfgl" | while read -r kind f; do
     [ -n "$f" ] || continue
     copy=$(copy_of "$f"); new=$(plutil -p "$f" 2>/dev/null || cat "$f")
     case $kind in
@@ -858,7 +887,7 @@ $(printf '%s\n' "$new" | diff "$copy" - 2>/dev/null | grep '^[<>]' | head -20 | 
 check_daemon_integrity() {
   mkdir -p "$STATE/files" "$STATE/signers"
   plists=$(ls -1d /Library/LaunchDaemons/*.plist /Library/LaunchAgents/*.plist /Users/*/Library/LaunchAgents/*.plist 2>/dev/null)
-  hash_changes plist_sums "$plists" | while read -r kind f; do
+  stat_changed plists "$plists" && hash_changes plist_sums "$plists" | while read -r kind f; do
     [ "$kind" = changed ] || continue
     copy=$(copy_of "$f"); new=$(plutil -p "$f" 2>/dev/null)
     d=$(printf '%s\n' "$new" | diff "$copy" - 2>/dev/null | grep '^[<>]' | head -15 | mask_secrets | cut -c1-200)
@@ -874,7 +903,12 @@ ${d:-(không đọc được nội dung cũ)}
     label=$(plutil -extract Label raw -o - "$f" 2>/dev/null) || continue
     prog=$(plutil -extract Program raw -o - "$f" 2>/dev/null || plutil -extract ProgramArguments.0 raw -o - "$f" 2>/dev/null)
     [ -n "$prog" ] || continue
-    sig=$(sig_of "$prog"); sf="$STATE/signers/$label"
+    sf="$STATE/signers/$label"
+    # codesign chậm → chỉ kiểm lại khi file chạy đổi ctime / kích thước
+    key=$(stat -f '%c %z' "$prog" 2>/dev/null)
+    [ -n "$key" ] && [ "$key" = "$(cat "$sf.key" 2>/dev/null)" ] && [ -f "$sf" ] && continue
+    echo "$key" > "$sf.key"
+    sig=$(sig_of "$prog")
     old=$(cat "$sf" 2>/dev/null)
     if [ -n "$old" ] && [ "$old" != "$sig" ]; then
       alert "☠️ File chạy của dịch vụ $label đổi CHỮ KÝ
