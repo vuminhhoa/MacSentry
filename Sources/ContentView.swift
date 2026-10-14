@@ -133,7 +133,7 @@ struct ContentView: View {
 
     var trustedList: some View {
         VStack(alignment: .leading) {
-            Text("IP tin cậy vẫn được ghi lịch sử, nhưng không bật popup cảnh báo.")
+            Text("IP tin cậy vẫn được ghi lịch sử, nhưng không bật popup cảnh báo. (Máy chủ tin cậy cho cảnh báo reverse shell của daemon là danh sách khác: sudo nano /etc/macsentry.trusted)")
                 .font(.caption).foregroundStyle(.secondary)
             List {
                 ForEach(monitor.trusted.sorted(), id: \.self) { ip in

@@ -42,7 +42,8 @@ func onScreenSharing(_ e: JSON, attach: Bool) {
         let ok = (e["success"] as? Bool) ?? true
         // Thử sai liên tục (dò mật khẩu) → mỗi IP 1 cảnh báo / 5 phút, kèm số lần thử trong khoảng đó
         if !ok {
-            ssFails[ip, default: 0] += 1
+            if ssFails.count > 1000 { ssFails.removeAll() }   // dò mật khẩu từ rất nhiều IP: không giữ mãi
+        ssFails[ip, default: 0] += 1
             guard throttle("ssfail_\(ip)", 300) else {
                 spool(.log, "Screen Sharing đăng nhập sai từ \(ip) (lần \(ssFails[ip]!))"); return
             }
@@ -72,6 +73,7 @@ func onSSHLogin(_ e: JSON) {
     let user = str(e, "username") ?? "?"
     // Đăng nhập thành công: macsentryd đã báo (theo dõi `who`) → chỉ ghi log
     if (e["success"] as? Bool) == true { spool(.log, "SSH đăng nhập thành công: \(user) từ \(ip)"); return }
+    if sshFails.count > 1000 { sshFails.removeAll() }   // dò mật khẩu từ rất nhiều IP: không giữ mãi
     sshFails[ip, default: 0] += 1
     guard throttle("sshfail_\(ip)", 300) else { spool(.log, "SSH sai mật khẩu: \(user) từ \(ip) (lần \(sshFails[ip]!))"); return }
     let n = sshFails[ip]!; sshFails[ip] = 0

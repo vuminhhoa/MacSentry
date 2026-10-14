@@ -25,8 +25,11 @@ func spool(_ level: Level, _ rawText: String) {
 
 var throttled: [String: Date] = [:]
 func throttle(_ key: String, _ seconds: TimeInterval) -> Bool {
-    if let t = throttled[key], Date().timeIntervalSince(t) < seconds { return false }
-    throttled[key] = Date(); return true
+    let now = Date()
+    if let t = throttled[key], now.timeIntervalSince(t) < seconds { return false }
+    // Khoá có chứa dòng lệnh → dọn mục cũ để từ điển không phình mãi (khoá dài nhất là 1 giờ)
+    if throttled.count > 2000 { throttled = throttled.filter { now.timeIntervalSince($0.value) < 3600 } }
+    throttled[key] = now; return true
 }
 
 func touch(_ path: String) {

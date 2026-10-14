@@ -1,4 +1,4 @@
-#!/bin/sh
+#!/bin/bash
 # macsentryd — daemon cảnh báo an ninh chạy bằng root qua LaunchDaemon: chạy từ lúc bật máy (trước khi
 # đăng nhập), user thường không tắt/sửa được. Gửi Telegram khi có:
 #   - Bật / tắt máy, máy thức dậy
@@ -99,7 +99,9 @@ while :; do
   [ $((tick % 30)) -eq 0 ] && { resolve_trusted; check_accounts; check_persistence; check_self; daily_report
     # Dead-man switch: dịch vụ ngoài (vd healthchecks.io) báo cho bạn khi KHÔNG nhận được ping nữa
     # (daemon bị bootout / kill hẳn / máy bị tắt nguồn — những lúc daemon không tự báo được)
-    [ -n "$HEARTBEAT_URL" ] && curl -fsS -m 10 -o /dev/null "$HEARTBEAT_URL" >/dev/null 2>&1 & }
+    # URL đưa qua stdin, không để lộ trên dòng lệnh (`ps`) — ai có URL là giả được ping
+    [ -n "$HEARTBEAT_URL" ] && printf 'url = "%s"\n' "$HEARTBEAT_URL" | curl -fsS -m 10 -o /dev/null -K - >/dev/null 2>&1 &
+    cleanup_state; }
   tick=$((tick + 1))
 
   before=$SECONDS

@@ -29,11 +29,13 @@ $(proc_info "$pid")"
   rtlogs=$(ls -1d /Library/Logs/TeamViewer/*.log /Users/*/Library/Logs/TeamViewer/*.log \
            /Users/*/.anydesk/*.trace /Library/Application\ Support/AnyDesk/*.trace /var/log/anydesk*.trace \
            /Users/*/Library/Logs/RustDesk/server/*.log /Users/*/Library/Logs/RustDesk/*.log 2>/dev/null)
+  # Lần quét đầu: chỉ ghi mốc cuối các log đang có; về sau file log MỚI (app vừa cài) được đọc từ đầu
+  rt_new=new-ok; [ -f "$STATE/rt_logs_init" ] || { rt_new=; touch "$STATE/rt_logs_init"; }
   stat_changed rt_logs "$rtlogs" || return 0   # không file log nào đổi → không có phiên mới
   printf '%s\n' "$rtlogs" | while IFS= read -r f; do
     [ -f "$f" ] || continue
     key=${f//[^A-Za-z0-9._-]/_}; key=${key: -120}
-    hits=$(tail_new "rt_$key" "$f" | grep -a -i -E 'incoming session|accepting from|connection incoming|incoming connection|new connection from|session started|authenticated|remote control (started|session)|login from' | tail -5 | cut -c1-250)
+    hits=$(tail_new "rt_$key" "$f" $rt_new | grep -a -i -E 'incoming session|accepting from|connection incoming|incoming connection|new connection from|session started|authenticated|remote control (started|session)|login from' | tail -5 | cut -c1-250)
     [ -n "$hits" ] && throttle "rtlog_$key" 60 && alert "🚨 Có PHIÊN KẾT NỐI ĐẾN qua app điều khiển từ xa
 Log: $f
 $hits"

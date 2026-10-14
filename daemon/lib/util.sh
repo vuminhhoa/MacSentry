@@ -7,18 +7,34 @@ BASE_T=$(( $(date +%s) - SECONDS ))
 
 now() { date '+%d/%m/%Y %H:%M:%S'; }
 log() { printf '%s %s\n' "$(now)" "$(printf '%s' "$*" | tr '\n' ' ')" >> "$LOG"; }
+# Nội dung tin hợp lệ với Telegram: tối đa 4096 ký tự → cắt ở 3900 byte (luôn ≤ 3900 ký tự), rồi bỏ byte UTF-8
+# hỏng (do cắt giữa ký tự, hoặc `cut -c` cắt theo byte ở locale C) — tin lỗi bị Telegram trả 400 và mất hẳn
+tg_text() {
+  local t="🛡 $HOST
+$1"
+  [ ${#t} -gt 3900 ] && t="$(printf '%s' "$t" | head -c 3900)
+…(đã cắt bớt, xem đủ trong /var/log/macsentry.log)"
+  printf '%s' "$t" | iconv -c -f UTF-8 -t UTF-8 2>/dev/null
+}
 post() { # $1 = nội dung, $2 = timeout giây, $3 = im lặng (true/false); in ra mã HTTP
   [ -n "$DRYRUN" ] && { echo 200; return; }   # chạy thử: không gửi thật
-  curl -s -m "$2" -o /dev/null -w '%{http_code}' "https://api.telegram.org/bot$TOKEN/sendMessage" \
+  # URL chứa token đưa qua stdin (-K -), KHÔNG để trên dòng lệnh: user thường xem được tham số của tiến trình
+  # root bằng `ps` → phần mềm độc chạy bằng user sẽ lấy được token của daemon
+  printf 'url = "https://api.telegram.org/bot%s/sendMessage"\n' "$TOKEN" |
+  curl -s -m "$2" -o /dev/null -w '%{http_code}' -K - \
     --data-urlencode "chat_id=$CHAT" --data-urlencode "disable_notification=${3:-false}" \
-    --data-urlencode "text=🛡 $HOST
-$1"
+    --data-urlencode "text=$(tg_text "$1")"
 }
-# Gửi nền, thử lại tới ~5 phút (lúc mới bật/thức máy có thể chưa có mạng)
+# Gửi nền, thử lại tới ~5 phút (lúc mới bật/thức máy có thể chưa có mạng). Chỉ thử lại khi lỗi tạm thời
+# (mạng = 000, quá tải 429, máy chủ 5xx); lỗi 4xx khác gửi lại cũng vô ích → ghi log ngay.
 send() { # $1 = nội dung, $2 = im lặng
   log "$1"
-  ( i=0; while [ $i -lt 30 ]; do [ "$(post "$1" 10 "${2:-false}")" = 200 ] && exit 0; i=$((i+1)); sleep 10; done
-    log "Gửi Telegram thất bại" ) &
+  ( i=0; while [ $i -lt 30 ]; do
+      c=$(post "$1" 10 "${2:-false}")
+      case $c in 200) exit 0 ;; 000|429|5??) ;; *) log "Gửi Telegram thất bại (HTTP $c)"; exit 1 ;; esac
+      i=$((i+1)); sleep 10
+    done
+    log "Gửi Telegram thất bại (hết lượt thử lại)" ) &
 }
 alert() { send "$1" false; }   # có chuông
 info() { send "$1" true; }     # im lặng
@@ -34,6 +50,13 @@ throttle() {
   [ -f "$f" ] && read -r l < "$f"
   [ $((t - ${l:-0})) -ge "$2" ] || return 1
   echo "$t" > "$f"
+}
+
+# Dọn file chống spam cũ (mỗi khoá một file, khoá có thể chứa cả dòng lệnh → không dọn thì tăng mãi).
+# Khoá giữ lâu nhất là 7 ngày (sametoken) → xoá file không đụng tới hơn 8 ngày. Mỗi ngày một lần.
+cleanup_state() {
+  throttle cleanup_state 86400 || return 0
+  find "$STATE/throttle" -type f -mtime +8 -delete 2>/dev/null
 }
 
 # Helper Endpoint Security (macsentry-es) còn sống: nó chạm file này mỗi phút khi eslogger đang chạy được
@@ -53,9 +76,13 @@ check_spool() {
 # In phần mới ghi thêm vào file $2 kể từ lần gọi trước (lần đầu chỉ ghi mốc). $1 = tên state.
 tail_new() {
   local f size off
-  f="$STATE/tail_$1"; size=$(stat -f %z "$2" 2>/dev/null) || return 0
+  f="$STATE/tail_$1"
+  # File chưa có: mốc 0 → khi file xuất hiện (vd active-responses.log ở lần active response ĐẦU TIÊN) đọc từ đầu
+  size=$(stat -f %z "$2" 2>/dev/null) || { [ -f "$f" ] || echo 0 > "$f"; return 0; }
   off=$(cat "$f" 2>/dev/null); echo "$size" > "$f"
-  [ -n "$off" ] || return 0
+  # Chưa có mốc: lần chạy đầu của daemon → chỉ ghi mốc (không gửi lại nội dung cũ); file mới xuất hiện SAU
+  # lần quét đầu (gọi kèm $3 = "new-ok", vd log của app điều khiển từ xa vừa cài) → đọc từ đầu
+  if [ -z "$off" ]; then [ "$3" = new-ok ] || return 0; off=0; fi
   [ "$size" -lt "$off" ] && off=0   # file bị xoay vòng / làm mới
   [ "$size" -gt "$off" ] && tail -c +"$((off + 1))" "$2" | head -c 200000
 }

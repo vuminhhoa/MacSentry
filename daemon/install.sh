@@ -98,7 +98,7 @@ write_plist() { # $1 = label, $2.. = ProgramArguments
 PLIST
   chown root:wheel "/Library/LaunchDaemons/$label.plist"; chmod 644 "/Library/LaunchDaemons/$label.plist"
 }
-write_plist $LABEL /bin/sh /usr/local/libexec/macsentryd
+write_plist $LABEL /bin/bash /usr/local/libexec/macsentryd
 write_plist $ES_LABEL /usr/local/libexec/macsentry-es
 
 restart() { # $1 = label

@@ -47,15 +47,20 @@ $(diff "$copy" "$f" 2>/dev/null | grep '^[<>]' | head -15 | mask_secrets | cut -
 
 check_persistence() {
   # Login Items / Background Items đăng ký qua SMAppService (loại "legacy" = plist, đã theo dõi ở check_system)
-  # sfltool tốn ~3 giây → chỉ chạy khi file DB Background Items đổi (hoặc mỗi giờ một lần cho chắc)
+  # sfltool tốn ~3–5 giây → chỉ chạy khi file DB Background Items đổi (hoặc mỗi giờ một lần cho chắc), và chạy
+  # NỀN (không chặn vòng lặp chính: kết nối từ xa, hàng đợi tin) — kết quả được so ở lượt 60 giây kế tiếp
   btm_sig="$(stat -f '%c %z %N' /private/var/db/com.apple.backgroundtaskmanagement/* 2>/dev/null) $(( $(date +%s) / 3600 ))"
-  if [ "$btm_sig" != "$(cat "$STATE/btm_sig" 2>/dev/null)" ]; then
-    echo "$btm_sig" > "$STATE/btm_sig"
-    btm=$(sfltool dumpbtm 2>/dev/null | awk -F': ' '/^ *Type:/ { t = $2 } /^ *Identifier:/ {
-            if (t !~ /^(developer|app|legacy)/) print t " | " $2 }' | sort -u)
+  if [ -f "$STATE/btm_scan" ]; then
+    btm=$(cat "$STATE/btm_scan"); rm -f "$STATE/btm_scan"
     diff_state btm "$btm" nonempty | while read -r sign rest; do
       [ "$sign" = "+" ] && alert "🧩 Mục chạy nền / Login Item mới: $rest" || info "🧩 Đã gỡ mục chạy nền: $rest"
     done
+  fi
+  if [ "$btm_sig" != "$(cat "$STATE/btm_sig" 2>/dev/null)" ]; then
+    echo "$btm_sig" > "$STATE/btm_sig"
+    ( sfltool dumpbtm 2>/dev/null | awk -F': ' '/^ *Type:/ { t = $2 } /^ *Identifier:/ {
+        if (t !~ /^(developer|app|legacy)/) print t " | " $2 }' | sort -u > "$STATE/btm_scan.tmp" &&
+      mv -f "$STATE/btm_scan.tmp" "$STATE/btm_scan" ) &
   fi
 
   # Bỏ profile Screen Time (com.apple.ManagedSettings.*): macOS tự tạo/xoá khi đổi cài đặt Screen Time

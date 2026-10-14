@@ -65,9 +65,14 @@ check_accounts() {
 REVSHELL_LSOF_C=$(for c in bash sh zsh dash ksh tcsh csh fish nc ncat netcat socat telnet perl ruby php osascript tclsh expect lua; do
                    printf -- '-c %s ' "$c"; done)
 check_revshell() {
-  rs=$(lsof -nP -a -iTCP -sTCP:ESTABLISHED $REVSHELL_LSOF_C -F pcn 2>/dev/null | awk '/^p/ { p = substr($0, 2) } /^c/ { c = substr($0, 2) } /^n/ {
+  rs=$( { lsof -nP -a -iTCP -sTCP:ESTABLISHED $REVSHELL_LSOF_C -F pcn 2>/dev/null | awk '/^p/ { p = substr($0, 2) } /^c/ { c = substr($0, 2) } /^n/ {
          split(substr($0, 2), a, "->"); r = a[2]; if (r == "" || r ~ /^(127\.|\[::1\]|localhost)/) next
-         if (c ~ /^(bash|sh|zsh|dash|ksh|tcsh|csh|fish|nc|ncat|netcat|socat|telnet|perl|perl5.*|ruby|php|osascript|tclsh|expect|lua)$/) print c, p, r }' | sort -u)
+         if (c ~ /^(bash|sh|zsh|dash|ksh|tcsh|csh|fish|nc|ncat|netcat|socat|telnet|perl|perl5.*|ruby|php|osascript|tclsh|expect|lua)$/) print c, p, r }'
+       # python / node: hợp lệ thường xuyên giữ kết nối ra ngoài (IDE, dev server, npm...) → chỉ tính khi
+       # stdin/stdout/stderr (fd 0–2) LÀ socket TCP — dấu hiệu đặc trưng của reverse shell (dup2 socket vào fd 0–2)
+       lsof -nP -a -iTCP -sTCP:ESTABLISHED -d 0-2 -c python -c Python -c node -F pcn 2>/dev/null | awk '/^p/ { p = substr($0, 2) } /^c/ { c = substr($0, 2) } /^n/ {
+         split(substr($0, 2), a, "->"); r = a[2]; if (r == "" || r ~ /^(127\.|\[::1\]|localhost)/) next
+         if (c ~ /^([Pp]ython[0-9.]*|node)$/) print c, p, r }' ; } | sort -u)
   diff_state revshell "$rs" | while read -r sign c p r; do
     [ "$sign" = "+" ] || continue
     detail=$(proc_info "$p")

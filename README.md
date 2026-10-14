@@ -111,4 +111,4 @@ Mục tiêu: không ảnh hưởng máy đang làm việc. Đo trên máy dev (I
 - Chạy thử helper ES không cần root: `STATE=./state build/macsentry-es --replay < su-kien.jsonl`. Mẫu JSON thật
   của từng loại sự kiện được lưu ở `/var/db/macsentry/es_samples/` (để đối chiếu khi macOS đổi định dạng).
 - Chạy thử daemon không cần root và không gửi Telegram:
-  `DRYRUN=1 CONF=./test.conf LOG=./test.log STATE=./state sh daemon/macsentryd.sh`
+  `DRYRUN=1 CONF=./test.conf LOG=./test.log STATE=./state bash daemon/macsentryd.sh`
