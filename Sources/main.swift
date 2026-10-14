@@ -497,6 +497,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var sleptAt: Date?
     var sensorsInUse: Set<String> = []
     var sensorTimer: Timer?
+    var watchdogTimer: Timer?
+    var daemonMissing: [String: Int] = [:]
 
     func applicationDidFinishLaunching(_ note: Notification) {
         // Chỉ cho chạy 1 instance. Bản mở bằng Finder/`open` giao cho launchd rồi mới thoát, nên bản launchd
@@ -578,6 +580,46 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in self?.checkSensors() }
         RunLoop.main.add(t, forMode: .common)
         sensorTimer = t
+
+        // Giám sát chéo: app (user) canh daemon root và helper Endpoint Security — bị tắt mà không kịp tự báo
+        // (kill -9, launchctl bootout) thì app báo thay. Mỗi 20 giây, vắng 3 lần liên tiếp (~1 phút) mới báo.
+        let w = Timer(timeInterval: 20, repeats: true) { [weak self] _ in self?.checkDaemons() }
+        RunLoop.main.add(w, forMode: .common)
+        watchdogTimer = w
+    }
+
+    /// (tên hiển thị, file plist — có cài mới canh, đoạn nhận diện trong dòng lệnh của `ps`)
+    static let watched = [
+        ("macsentryd (daemon chính)", "/Library/LaunchDaemons/io.github.vuminhhoa.macsentry.daemon.plist", "/usr/local/libexec/macsentryd"),
+        ("macsentry-es (Endpoint Security)", "/Library/LaunchDaemons/io.github.vuminhhoa.macsentry.es.plist", "/usr/local/libexec/macsentry-es"),
+    ]
+
+    func checkDaemons() {
+        DispatchQueue.global().async {
+            let p = Process(); p.executableURL = URL(fileURLWithPath: "/bin/ps"); p.arguments = ["-axo", "command="]
+            let out = Pipe(); p.standardOutput = out
+            guard (try? p.run()) != nil else { return }
+            let ps = String(decoding: out.fileHandleForReading.readDataToEndOfFile(), as: UTF8.self)
+            p.waitUntilExit()
+            DispatchQueue.main.async {
+                for (name, plist, marker) in Self.watched where FileManager.default.fileExists(atPath: plist) {
+                    if ps.contains(marker) {
+                        if (self.daemonMissing[name] ?? 0) >= 3 {
+                            Telegram.send("✅ \(name) đã chạy lại\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+                        }
+                        self.daemonMissing[name] = 0
+                    } else {
+                        let n = (self.daemonMissing[name] ?? 0) + 1
+                        self.daemonMissing[name] = n
+                        if n == 3 {
+                            Telegram.send("⚠️ \(name) KHÔNG chạy (~1 phút)\nCó thể đã bị tắt bằng launchctl bootout / kill.\n"
+                                          + "Kiểm tra: sudo launchctl print system/\((plist as NSString).lastPathComponent.replacingOccurrences(of: ".plist", with: ""))\n"
+                                          + "Lúc: \(timeFmt.string(from: Date()))")
+                        }
+                    }
+                }
+            }
+        }
     }
 
     func checkSensors() {

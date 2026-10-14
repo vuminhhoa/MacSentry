@@ -16,7 +16,28 @@ Cảnh báo an ninh cho máy Mac, gửi về Telegram. Gồm 2 phần:
   - Tư thế bảo mật: firewall, Gatekeeper, SIP, FileVault, tự cập nhật bảo mật; file của MacSentry bị sửa;
     app MacSentry không chạy
   - Phần cứng & mạng: USB, ổ đĩa ngoài, nguồn điện/pin, đổi mạng, ổ đĩa sắp đầy
+  - App điều khiển từ xa (TeamViewer, AnyDesk, RustDesk, Chrome Remote Desktop...) và tunnel (ngrok, cloudflared...):
+    tiến trình chạy + phiên kết nối đến trong log của chúng (các app này đi qua máy chủ trung gian, không lộ qua cổng)
+  - **Wazuh agent**: tiến trình dừng, mất kết nối manager, đổi manager, cấu hình đổi (kể cả `agent.conf` manager
+    đẩy xuống), bật lệnh từ xa, active response đã chạy trên máy, file thực thi/script bị thay
+  - **Agent quan trọng nói chung**: danh mục có sẵn (CrowdStrike, SentinelOne, Defender, Sophos, Jamf, Intune, Santa,
+    Little Snitch, LuLu, Tailscale, WARP, OpenVPN, Tunnelblick, TeamViewer, AnyDesk...) + `/etc/macsentry.agents`
+    → tiến trình dừng, file cấu hình đổi (kèm nội dung, che giá trị bí mật)
+  - Mọi LaunchDaemon/Agent: nội dung plist bị sửa, file chạy đổi chữ ký (bị tráo binary); authorization plugin,
+    PrivilegedHelperTools, StartupItems, Root CA được tin cậy, kext, login hook, extension trình duyệt,
+    dịch vụ hệ thống bị `launchctl disable`, shell rc / `~/.ssh/config` của user
+  - Tư thế bảo mật thêm: tự đăng nhập, Guest, khoá màn hình, Find My, MDM, Remote Management, VNC mật khẩu kiểu cũ,
+    XProtect quá cũ
+  - Chống bị tắt lén: báo khi daemon bị `kill -9`, heartbeat ra dịch vụ ngoài (`HEARTBEAT_URL`), app canh ngược daemon
   - Báo cáo tóm tắt mỗi sáng (không thấy báo cáo → máy/daemon có vấn đề)
+- **macsentry-es** (LaunchDaemon root, cần Full Disk Access): đọc sự kiện Endpoint Security qua `/usr/bin/eslogger`,
+  gửi qua hàng đợi của macsentryd (không giữ token):
+  - Xác thực thất bại kèm **chính xác tiến trình gọi** (không còn báo nhầm do dịch vụ iCloud/FileVault)
+  - Có người xem/điều khiển màn hình (Screen Sharing/ARD), cấp quyền TCC nhạy cảm (Ghi màn hình, Trợ năng,
+    Theo dõi bàn phím, Full Disk Access, camera, micro...), XProtect phát hiện mã độc, vượt Gatekeeper,
+    đổi mật khẩu tài khoản, nạp kext
+  - Lệnh nguy hiểm: reverse shell (mọi ngôn ngữ), đọc mật khẩu keychain, tắt SIP/Gatekeeper/firewall, tắt
+    MacSentry/Wazuh/EDR, tạo admin, cài login hook, hộp thoại giả hỏi mật khẩu, `curl | sh`, gỡ quarantine
 
 ## Cài đặt
 
@@ -33,12 +54,24 @@ Cấu hình Telegram tại `~/Library/Application Support/MacSentry/telegram.jso
 Sau đó cài daemon (lấy token từ file trên, lưu vào `/etc/macsentry.conf` chỉ root đọc được):
 
 ```sh
-sudo ./daemon/install.sh         # gỡ: sudo ./daemon/uninstall.sh
+sudo ./daemon/install.sh                 # gỡ: sudo ./daemon/uninstall.sh
+sudo ./daemon/install.sh --reconfigure   # đổi bot Telegram riêng cho daemon / URL heartbeat
 ```
+
+Lần đầu cài, cấp **Full Disk Access** cho `/usr/local/libexec/macsentry-es` (Cài đặt → Quyền riêng tư & Bảo mật →
+Truy cập toàn bộ ổ đĩa → `+` → Cmd+Shift+G). Chưa cấp thì daemon nhắc qua Telegram.
+
+Khuyên dùng:
+- **Bot Telegram riêng cho daemon** (`--reconfigure`): token của app nằm trong thư mục user; phần mềm độc chạy bằng
+  user lấy được token thì xoá được tin bot đó đã gửi (trong 48 giờ). Bot riêng → cảnh báo của daemon không bị xoá.
+- **Heartbeat** (healthchecks.io miễn phí): daemon ping mỗi phút; mất ping (daemon bị gỡ, máy bị rút điện) thì
+  dịch vụ đó báo cho bạn — trường hợp chính máy không thể tự báo.
 
 ## Ghi chú
 
 - macOS ẩn socket TCP với `netstat` khi được gọi từ binary không phải của hệ thống, nên app giao việc chạy
   `netstat` cho một job `launchd` (`io.github.vuminhhoa.macsentry.netstat`) và đọc kết quả từ file.
+- Chạy thử helper ES không cần root: `STATE=./state build/macsentry-es --replay < su-kien.jsonl`. Mẫu JSON thật
+  của từng loại sự kiện được lưu ở `/var/db/macsentry/es_samples/` (để đối chiếu khi macOS đổi định dạng).
 - Chạy thử daemon không cần root và không gửi Telegram:
   `DRYRUN=1 CONF=./test.conf LOG=./test.log STATE=./state sh daemon/macsentryd.sh`
