@@ -174,6 +174,65 @@ func onExec(_ e: JSON, _ msg: JSON) {
 }
 
 
+/// Mục tự khởi động đăng ký qua Background Task Management (LaunchAgent/Daemon, Login Item, SMAppService).
+/// Mục "legacy" (plist trong LaunchAgents/LaunchDaemons) macsentryd đã báo kèm chữ ký file chạy → ở đây chỉ ghi
+/// log ai đã cài; mục KHÔNG legacy (Login Item / SMAppService) trước đây chỉ thấy qua `sfltool` mỗi giờ → báo ngay.
+let btmTypes = [0: "mục của user", 1: "app", 2: "Login Item", 3: "LaunchAgent", 4: "LaunchDaemon"]
+func onBTM(_ e: JSON, _ msg: JSON, add: Bool) {
+    let item = dict(e, "item")
+    let kind = int(item, "item_type").flatMap { btmTypes[$0] } ?? "?"
+    let url = str(item, "item_url") ?? "?"
+    let exe = str(e, "executable_path") ?? str(item, "app_url") ?? "?"
+    let who = dict(e, "instigator") ?? dict(msg, "process")
+    let legacy = (item?["legacy"] as? Bool) == true
+    guard add else {
+        spool(.info, "🧩 Đã gỡ mục tự khởi động (\(kind)): \(url)")
+        return
+    }
+    if legacy {
+        spool(.log, "BTM: mục tự khởi động (\(kind)) \(url) — chạy \(exe) — cài bởi \(describe(who).replacingOccurrences(of: "\n", with: " "))")
+        return
+    }
+    spool(.alert, """
+        🧩 Mục tự khởi động MỚI (\(kind))
+        Mục: \(url)
+        Chạy: \(exe)\(str(item, "app_url").map { "\nThuộc app: \($0)" } ?? "")
+        Cài bởi: \(describe(who))
+        """)
+}
+
+func onProfile(_ e: JSON, _ msg: JSON, add: Bool) {
+    let p = dict(e, "profile")
+    let id = str(p, "identifier") ?? "?"
+    // Profile Screen Time (com.apple.ManagedSettings.*): macOS tự tạo/xoá khi đổi cài đặt Screen Time
+    if id.hasPrefix("com.apple.ManagedSettings.") { spool(.log, "Profile Screen Time \(add ? "thêm" : "gỡ"): \(id)"); return }
+    let name = [str(p, "display_name"), str(p, "organization")].compactMap { $0 }.filter { !$0.isEmpty }.joined(separator: " — ")
+    if !add { spool(.info, "📜 Đã gỡ configuration profile: \(id)\(name.isEmpty ? "" : " (\(name))")"); return }
+    let update = (e["is_update"] as? Bool) == true
+    spool(.alert, """
+        📜 Configuration profile \(update ? "được CẬP NHẬT" : "MỚI"): \(id)
+        Tên: \(name.isEmpty ? "?" : name) | Phạm vi: \(str(p, "scope") ?? "?")
+        Cài bởi: \(describe(dict(e, "instigator") ?? dict(msg, "process")))
+        (profile có thể ép proxy, chứng chỉ, quản lý máy từ xa)
+        """)
+}
+
+/// Tài khoản / nhóm (Open Directory). Chỉ báo khi thao tác thành công (error_code 0).
+func onOD(_ type: String, _ e: JSON, _ msg: JSON) {
+    guard int(e, "error_code") == 0 else { return }
+    let who = describe(dict(e, "instigator") ?? dict(msg, "process"))
+    let group = str(e, "group_name") ?? "?"
+    let member = deepStr(dict(e, "member"), "name") ?? deepStr(dict(e, "member"), "uuid") ?? "?"
+    switch type {
+    case "od_create_user": spool(.alert, "👥 Có tài khoản user MỚI: \(str(e, "user_name") ?? "?")\nTạo bởi: \(who)")
+    case "od_delete_user": spool(.alert, "👥 Đã XOÁ tài khoản user: \(str(e, "user_name") ?? "?")\nXoá bởi: \(who)")
+    case "od_group_add" where group == "admin": spool(.alert, "👑 \(member) vừa được cấp quyền ADMIN\nCấp bởi: \(who)")
+    case "od_group_remove" where group == "admin": spool(.info, "👑 \(member) bị gỡ quyền admin\nBởi: \(who)")
+    case "od_group_set" where group == "admin": spool(.alert, "👑 Danh sách nhóm ADMIN vừa bị ĐẶT LẠI\nBởi: \(who)")
+    default: spool(.log, "OD \(type): nhóm \(group), thành viên \(member) — \(who.replacingOccurrences(of: "\n", with: " "))")
+    }
+}
+
 func onEvent(_ type: String, _ e: JSON, _ msg: JSON) {
     switch type {
     case "authentication": onAuthentication(e, msg)
@@ -207,6 +266,11 @@ func onEvent(_ type: String, _ e: JSON, _ msg: JSON) {
             Tài khoản: \(str(e, "account_name") ?? "?")
             Tiến trình: \(describe(dict(e, "instigator") ?? dict(msg, "process")))
             """)
+    case "btm_launch_item_add": onBTM(e, msg, add: true)
+    case "btm_launch_item_remove": onBTM(e, msg, add: false)
+    case "profile_add": onProfile(e, msg, add: true)
+    case "profile_remove": onProfile(e, msg, add: false)
+    case "od_create_user", "od_delete_user", "od_group_add", "od_group_remove", "od_group_set": onOD(type, e, msg)
     case "kextload":
         spool(.alert, "🧷 Nạp kernel extension: \(str(e, "identifier") ?? "?")\nTiến trình: \(describe(dict(msg, "process")))")
     default: break

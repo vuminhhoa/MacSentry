@@ -31,9 +31,12 @@ PLIST
 SIGN_ID=$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')
 codesign --force --deep -s "${SIGN_ID:--}" "$APP"
 
-# Helper Endpoint Security cho daemon (cài bằng: sudo ./daemon/install.sh). Ký cùng chứng chỉ để quyền
-# Full Disk Access đã cấp vẫn còn hiệu lực sau mỗi lần build lại.
-swiftc -O -o build/macsentry-es es/*.swift 2>&1 | grep -v "^$" || true
+# Daemon root macsentryd và helper Endpoint Security (cài bằng: sudo ./daemon/install.sh). Ký cùng chứng chỉ để quyền
+# Full Disk Access đã cấp cho helper vẫn còn hiệu lực sau mỗi lần build lại.
+swiftc -O -o build/macsentryd daemon/Sources/*.swift shared/*.swift 2>&1 | grep -v "^$" || true
+test -x build/macsentryd
+codesign --force -s "${SIGN_ID:--}" --identifier io.github.vuminhhoa.macsentry.daemon build/macsentryd
+swiftc -O -o build/macsentry-es es/*.swift shared/*.swift 2>&1 | grep -v "^$" || true
 test -x build/macsentry-es
 codesign --force -s "${SIGN_ID:--}" --identifier io.github.vuminhhoa.macsentry.es build/macsentry-es
 

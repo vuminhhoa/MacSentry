@@ -34,4 +34,14 @@ func deepStr(_ v: Any?, _ key: String) -> String? {
 
 func pid(_ p: JSON?) -> Int? { int(p, "audit_token", "pid") }
 func path(_ p: JSON?) -> String { str(p, "executable", "path") ?? "?" }
-func base(_ s: String) -> String { (s as NSString).lastPathComponent }
+
+/// Mô tả một tiến trình trong sự kiện: đường dẫn, pid, chữ ký (signing id / team id), chuỗi cha
+func describe(_ p: JSON?) -> String {
+    guard let p else { return "?" }
+    let team = str(p, "team_id") ?? ""
+    let signer = (p["is_platform_binary"] as? Bool) == true ? "Apple" : (team.isEmpty ? "không có Team ID" : "Team \(team)")
+    // Tiến trình thường đã thoát khi helper kịp tra (vd dscl) → lần chuỗi từ ppid ghi sẵn trong sự kiện
+    var c = chain(pid(p))
+    if c == "?", let pp = int(p, "ppid") ?? int(p, "original_ppid"), pp > 1 { c = "\(base(path(p)))(đã thoát) ← \(chain(pp))" }
+    return "\(path(p)) (pid \(pid(p).map(String.init) ?? "?"), \(signer))\nChuỗi tiến trình: \(c)"
+}

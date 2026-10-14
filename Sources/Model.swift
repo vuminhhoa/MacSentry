@@ -2,7 +2,7 @@ import Foundation
 
 // MARK: - Model
 
-/// Cổng của các dịch vụ truy cập từ xa cần theo dõi (khớp với REMOTE_PORTS trong daemon/macsentryd.sh)
+/// Cổng của các dịch vụ truy cập từ xa cần theo dõi (khớp với remotePorts trong daemon/Sources/Network.swift)
 let remoteServices: [String: String] = [
     "22": "SSH", "5900": "Screen Sharing/VNC", "3283": "Apple Remote Desktop", "445": "Chia sẻ file SMB", "548": "AFP", "3031": "Remote Apple Events",
 ]

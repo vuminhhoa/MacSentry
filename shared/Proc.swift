@@ -1,17 +1,47 @@
 import Foundation
 
-// MARK: - Thông tin tiến trình
-// Thông tin tiến trình qua libproc / sysctl — không fork `ps` (helper tra chuỗi cha rất thường xuyên)
+// MARK: - Thông tin tiến trình (dùng chung cho macsentryd và macsentry-es)
+// Đọc qua libproc / sysctl — không fork `ps` / `lsof`.
 
-/// Tên ngắn và pid cha của tiến trình (nil nếu đã thoát)
-func procInfo(_ pid: Int) -> (name: String, ppid: Int)? {
+struct ProcInfo {
+    let pid: Int32
+    let name: String   // tên của kernel (pbi_name, tối đa 32 ký tự)
+    let ppid: Int
+    let uid: Int
+    let start: Date
+}
+
+/// Thông tin cơ bản của tiến trình (nil nếu đã thoát / không đọc được)
+func procBSD(_ pid: Int32) -> ProcInfo? {
     var info = proc_bsdinfo()
     let size = Int32(MemoryLayout<proc_bsdinfo>.size)
-    guard proc_pidinfo(Int32(pid), PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
+    guard proc_pidinfo(pid, PROC_PIDTBSDINFO, 0, &info, size) == size else { return nil }
     // pbi_name (32 ký tự) đầy đủ hơn pbi_comm (16 ký tự)
     var name = withUnsafeBytes(of: info.pbi_name) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) }
     if name.isEmpty { name = withUnsafeBytes(of: info.pbi_comm) { String(cString: $0.bindMemory(to: CChar.self).baseAddress!) } }
-    return (name, Int(info.pbi_ppid))
+    return ProcInfo(pid: pid, name: name, ppid: Int(info.pbi_ppid), uid: Int(info.pbi_uid),
+                    start: Date(timeIntervalSince1970: TimeInterval(info.pbi_start_tvsec)))
+}
+
+/// Tên ngắn và pid cha của tiến trình (nil nếu đã thoát)
+func procInfo(_ pid: Int) -> (name: String, ppid: Int)? {
+    procBSD(Int32(pid)).map { ($0.name, $0.ppid) }
+}
+
+/// Mọi pid đang chạy
+func allPids() -> [Int32] {
+    let n = proc_listallpids(nil, 0)
+    guard n > 0 else { return [] }
+    var pids = [Int32](repeating: 0, count: Int(n) + 64)
+    let got = proc_listallpids(&pids, Int32(pids.count * MemoryLayout<Int32>.size))
+    return pids.prefix(Int(max(got, 0))).filter { $0 > 0 }
+}
+
+/// Đường dẫn file thực thi
+func procPath(_ pid: Int32) -> String? {
+    var buf = [CChar](repeating: 0, count: 4096)
+    guard proc_pidpath(pid, &buf, UInt32(buf.count)) > 0 else { return nil }
+    return String(cString: buf)
 }
 
 /// Dòng lệnh đầy đủ (argv) của tiến trình, đọc từ KERN_PROCARGS2: [argc][đường dẫn exec]\0…\0[argv0]\0[argv1]\0…
@@ -42,8 +72,10 @@ func userName(_ uid: Int) -> String {
     return String(cString: pw.pointee.pw_name)
 }
 
+func base(_ s: String) -> String { (s as NSString).lastPathComponent }
+
 /// Chuỗi tiến trình cha (tên(pid) ← …), tối đa 6 cấp, kèm dòng lệnh đầy đủ của từng cấp (để nhận diện
-/// tiến trình con của macsentryd: tên tiến trình chỉ là "sh", phải nhìn dòng lệnh mới thấy "macsentryd")
+/// tiến trình con của macsentryd: phải nhìn dòng lệnh mới thấy "macsentryd")
 func ancestry(_ start: Int?) -> (text: String, commands: [String]) {
     guard var p = start else { return ("?", []) }
     var parts: [String] = [], cmds: [String] = []
@@ -61,14 +93,3 @@ func ancestry(_ start: Int?) -> (text: String, commands: [String]) {
     return (parts.isEmpty ? "?" : parts.joined(separator: " ← "), cmds)
 }
 func chain(_ start: Int?) -> String { ancestry(start).text }
-
-/// Mô tả một tiến trình trong sự kiện: đường dẫn, pid, chữ ký (signing id / team id), chuỗi cha
-func describe(_ p: JSON?) -> String {
-    guard let p else { return "?" }
-    let team = str(p, "team_id") ?? ""
-    let signer = (p["is_platform_binary"] as? Bool) == true ? "Apple" : (team.isEmpty ? "không có Team ID" : "Team \(team)")
-    // Tiến trình thường đã thoát khi helper kịp tra (vd dscl) → lần chuỗi từ ppid ghi sẵn trong sự kiện
-    var c = chain(pid(p))
-    if c == "?", let pp = int(p, "ppid") ?? int(p, "original_ppid"), pp > 1 { c = "\(base(path(p)))(đã thoát) ← \(chain(pp))" }
-    return "\(path(p)) (pid \(pid(p).map(String.init) ?? "?"), \(signer))\nChuỗi tiến trình: \(c)"
-}

@@ -91,10 +91,11 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
             Telegram.send("\(night ? "🌙 Máy được mở khoá lúc NỬA ĐÊM" : "🔓 Màn hình được mở khoá") (\(NSUserName()))\nLúc: \(timeFmt.string(from: Date()))",
                           silent: !night)
         }
-        // Camera / micro bật-tắt (kiểm tra mỗi 3 giây)
+        // Camera / micro bật-tắt: CoreAudio / CoreMediaIO báo ngay khi đổi; quét dự phòng mỗi 30 giây
         sensorsInUse = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro đang được dùng bởi: \($0)" })
-        let t = Timer(timeInterval: 3, repeats: true) { [weak self] _ in self?.checkSensors() }
-        t.tolerance = 0.5
+        AVSensors.observe { [weak self] in self?.checkSensors() }
+        let t = Timer(timeInterval: 30, repeats: true) { [weak self] _ in self?.checkSensors() }
+        t.tolerance = 5
         RunLoop.main.add(t, forMode: .common)
         sensorTimer = t
 

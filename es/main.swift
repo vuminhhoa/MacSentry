@@ -12,9 +12,12 @@
 //   gatekeeper_user_override  cho phép chạy app bị Gatekeeper chặn
 //   od_modify_password      đổi mật khẩu tài khoản
 //   kextload                nạp kernel extension
+//   btm_launch_item_*       mục tự khởi động (Login Item, LaunchAgent/Daemon, SMAppService) thêm / gỡ
+//   profile_add/remove      configuration profile
+//   od_*                    tạo / xoá user, thêm / gỡ thành viên nhóm admin
 //   exec                    lệnh nguy hiểm: reverse shell, dump keychain, tắt bảo vệ, tắt giám sát, cài cửa hậu…
 
-// Mã nguồn chia theo chủ đề: Spool, EventJSON, Processes, Rules, Handlers (thư mục es/).
+// Mã nguồn chia theo chủ đề: Spool, EventJSON, Rules, Handlers (thư mục es/); libproc ở shared/Proc.swift.
 import Foundation
 
 let stateDir = ProcessInfo.processInfo.environment["STATE"] ?? "/var/db/macsentry"
@@ -27,7 +30,10 @@ let execEnabled = !(((try? String(contentsOfFile: "/etc/macsentry.conf", encodin
 // sudo / su / openssh_login thay cho việc macsentryd đọc `log stream` (log stream tốn ~5% một nhân)
 let events = ["authentication", "screensharing_attach", "screensharing_detach", "tcc_modify",
               "xp_malware_detected", "xp_malware_remediated", "gatekeeper_user_override",
-              "od_modify_password", "kextload", "sudo", "su", "openssh_login"] + (execEnabled ? ["exec"] : [])
+              "od_modify_password", "kextload", "sudo", "su", "openssh_login",
+              // tự khởi động, profile, tài khoản: báo tức thì kèm tiến trình gây ra (macsentryd chỉ còn quét dự phòng)
+              "btm_launch_item_add", "btm_launch_item_remove", "profile_add", "profile_remove",
+              "od_create_user", "od_delete_user", "od_group_add", "od_group_remove", "od_group_set"] + (execEnabled ? ["exec"] : [])
 
 // MARK: - Chạy eslogger
 

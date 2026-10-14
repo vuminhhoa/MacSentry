@@ -9,5 +9,5 @@ for LABEL in io.github.vuminhhoa.macsentry.es io.github.vuminhhoa.macsentry.daem
 done
 rm -rf /usr/local/libexec/macsentry
 rm -f /usr/local/libexec/macsentryd /usr/local/libexec/macsentry-es /etc/macsentry.conf /etc/macsentry.trusted /etc/macsentry.agents /etc/macsentry.allow
-rm -rf /var/db/macsentry
+rm -rf /var/db/macsentry /var/run/macsentry
 echo "Đã gỡ macsentryd và macsentry-es (log vẫn còn ở /var/log/macsentry.log)"

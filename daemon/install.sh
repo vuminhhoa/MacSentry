@@ -8,8 +8,9 @@ cd "$(dirname "$0")"
 LABEL=io.github.vuminhhoa.macsentry.daemon
 ES_LABEL=io.github.vuminhhoa.macsentry.es
 ES_BIN=../build/macsentry-es
+DAEMON_BIN=../build/macsentryd
 SRC_CONF="$(eval echo ~"${SUDO_USER:-$USER}")/Library/Application Support/MacSentry/telegram.json"
-[ -x "$ES_BIN" ] || { echo "Chưa có $ES_BIN — chạy ./build.sh trước (không cần sudo)"; exit 1; }
+for b in "$ES_BIN" "$DAEMON_BIN"; do [ -x "$b" ] || { echo "Chưa có $b — chạy ./build.sh trước (không cần sudo)"; exit 1; }; done
 
 # ---- cấu hình: giữ file cũ (có thể đã có HEARTBEAT_URL, token riêng) trừ khi --reconfigure
 if [ ! -f /etc/macsentry.conf ] || [ "${1:-}" = --reconfigure ]; then
@@ -26,7 +27,8 @@ if [ ! -f /etc/macsentry.conf ] || [ "${1:-}" = --reconfigure ]; then
   echo "trên máy chạy nhiều tiến trình (IDE, build). Tắt thì vẫn còn các giám sát khác."
   read -r -p "Bật theo dõi exec? [Y/n]: " ES_EXEC_ANS
   case $ES_EXEC_ANS in [nN]*) ES_EXEC=0 ;; *) ES_EXEC=1 ;; esac
-  ( umask 077; printf 'TOKEN=%s\nCHAT=%s\nHEARTBEAT_URL=%s\nES_EXEC=%s\n' "$TOKEN" "$CHAT" "$HEARTBEAT_URL" "$ES_EXEC" > /etc/macsentry.conf )
+  # FIM=auto: file nhạy cảm mà Wazuh syscheck đã theo dõi thời gian thực thì để Wazuh lo; FIM=local: MacSentry tự theo dõi hết
+  ( umask 077; printf 'TOKEN=%s\nCHAT=%s\nHEARTBEAT_URL=%s\nES_EXEC=%s\nFIM=auto\n' "$TOKEN" "$CHAT" "$HEARTBEAT_URL" "$ES_EXEC" > /etc/macsentry.conf )
 fi
 chown root:wheel /etc/macsentry.conf; chmod 600 /etc/macsentry.conf
 
@@ -63,11 +65,8 @@ ALLOW
 fi
 
 mkdir -p /usr/local/libexec /var/db/macsentry
-install -o root -g wheel -m 755 macsentryd.sh /usr/local/libexec/macsentryd
-# Module của daemon: thay cả thư mục (xoá module cũ không còn dùng), chỉ root ghi được
-rm -rf /usr/local/libexec/macsentry
-install -d -o root -g wheel -m 755 /usr/local/libexec/macsentry
-install -o root -g wheel -m 644 lib/*.sh /usr/local/libexec/macsentry/
+install -o root -g wheel -m 755 "$DAEMON_BIN" /usr/local/libexec/macsentryd
+rm -rf /usr/local/libexec/macsentry   # module shell của bản cũ (daemon nay là một binary Swift)
 install -o root -g wheel -m 755 "$ES_BIN" /usr/local/libexec/macsentry-es
 chmod 700 /var/db/macsentry
 
@@ -98,7 +97,7 @@ write_plist() { # $1 = label, $2.. = ProgramArguments
 PLIST
   chown root:wheel "/Library/LaunchDaemons/$label.plist"; chmod 644 "/Library/LaunchDaemons/$label.plist"
 }
-write_plist $LABEL /bin/bash /usr/local/libexec/macsentryd
+write_plist $LABEL /usr/local/libexec/macsentryd
 write_plist $ES_LABEL /usr/local/libexec/macsentry-es
 
 restart() { # $1 = label
@@ -113,13 +112,17 @@ restart() { # $1 = label
 
 # Daemon cũ thấy "updating" khi dừng → không báo nhầm là tắt máy; "clean_stop" → bản mới không báo nhầm là bị kill
 # (bootout trả về ngay nhưng daemon cũ còn gửi tin trước khi thoát → restart() chờ nó dừng hẳn)
-touch /var/db/macsentry/updating /var/db/macsentry/clean_stop
+# "just_updated": file của MacSentry đổi trong 10 phút tới là do cài đặt → tin im lặng thay vì cảnh báo
+touch /var/db/macsentry/updating /var/db/macsentry/clean_stop /var/db/macsentry/just_updated
 restart $ES_LABEL
 restart $LABEL
 rm -f /var/db/macsentry/updating
 
-launchctl print system/$LABEL | grep -q "state = running" && echo "✅ macsentryd đang chạy. Log: /var/log/macsentry.log"
-sleep 5
+for i in 1 2 3 4 5; do
+  launchctl print system/$LABEL 2>/dev/null | grep -q "state = running" && { echo "✅ macsentryd đang chạy. Log: /var/log/macsentry.log"; break; }
+  sleep 1
+done
+sleep 4
 if [ -f /var/db/macsentry/es_alive ]; then
   echo "✅ macsentry-es (Endpoint Security) đang chạy"
 else
@@ -127,6 +130,7 @@ else
 ⚠️  macsentry-es chưa đọc được sự kiện Endpoint Security: $(cat /var/db/macsentry/es_status 2>/dev/null | tail -1)
    Cấp Full Disk Access: Cài đặt → Quyền riêng tư & Bảo mật → Truy cập toàn bộ ổ đĩa → nút + →
    Cmd+Shift+G gõ /usr/local/libexec/macsentry-es → bật công tắc. Helper tự thử lại sau ~30 giây.
+   Làm tương tự cho /usr/local/libexec/macsentryd (daemon cần để đọc đủ các vị trí được macOS bảo vệ).
 MSG
   sudo -u "${SUDO_USER:-root}" open "x-apple.systempreferences:com.apple.preference.security?Privacy_AllFiles" 2>/dev/null || true
 fi
