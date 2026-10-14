@@ -5,7 +5,7 @@ cd "$(dirname "$0")"
 APP="build/MacSentry.app"
 rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
 
-swiftc -O -o "$APP/Contents/MacOS/MacSentry" Sources/main.swift \
+swiftc -O -o "$APP/Contents/MacOS/MacSentry" Sources/*.swift \
   -framework AppKit -framework SwiftUI -framework UserNotifications -framework CoreAudio -framework CoreMediaIO 2>&1 | grep -v "^$" || true
 test -x "$APP/Contents/MacOS/MacSentry"
 
@@ -33,7 +33,7 @@ codesign --force --deep -s "${SIGN_ID:--}" "$APP"
 
 # Helper Endpoint Security cho daemon (cài bằng: sudo ./daemon/install.sh). Ký cùng chứng chỉ để quyền
 # Full Disk Access đã cấp vẫn còn hiệu lực sau mỗi lần build lại.
-swiftc -O -o build/macsentry-es es/main.swift 2>&1 | grep -v "^$" || true
+swiftc -O -o build/macsentry-es es/*.swift 2>&1 | grep -v "^$" || true
 test -x build/macsentry-es
 codesign --force -s "${SIGN_ID:--}" --identifier io.github.vuminhhoa.macsentry.es build/macsentry-es
 

@@ -67,6 +67,43 @@ Khuyên dùng:
 - **Heartbeat** (healthchecks.io miễn phí): daemon ping mỗi phút; mất ping (daemon bị gỡ, máy bị rút điện) thì
   dịch vụ đó báo cho bạn — trường hợp chính máy không thể tự báo.
 
+## Cấu trúc mã nguồn
+
+```
+Sources/            app thanh menu (Swift)
+  main.swift          điểm vào
+  AppDelegate*.swift  vòng đời app; +Monitoring (canh daemon, camera/micro); +Menu; +Alerts (popup/thông báo)
+  Monitor.swift       kết nối truy cập từ xa (đọc kết quả của daemon, tự quét khi không có daemon)
+  AVSensors, Telegram, LaunchAtLogin, ContentView, Store, Model
+daemon/
+  macsentryd.sh       daemon root: cấu hình, nạp module, khởi động, vòng lặp chính (tần suất từng nhóm)
+  lib/*.sh            mỗi file một nhóm giám sát: util, detail, auth, remote, system, persistence,
+                      posture, remote_tools, wazuh, agents, report, hardware
+  install.sh / uninstall.sh
+es/                 helper Endpoint Security (Swift)
+  main.swift          cấu hình, đọc dòng từ eslogger (getline), vòng lặp chạy lại eslogger
+  Handlers.swift      xử lý từng loại sự kiện       Rules.swift  quy tắc exec, Aho–Corasick, danh sách cho phép
+  Processes.swift     libproc / sysctl              Spool.swift  gửi qua daemon, che bí mật
+  EventJSON.swift     đọc JSON mềm dẻo              schema.py    in cấu trúc mẫu sự kiện thật
+```
+
+Thêm một nhóm giám sát mới cho daemon: tạo `daemon/lib/<tên>.sh` (chỉ định nghĩa hàm/hằng), thêm tên vào vòng
+nạp module và gọi hàm ở nhịp phù hợp trong vòng lặp của `macsentryd.sh`.
+
+## Hiệu năng
+
+Mục tiêu: không ảnh hưởng máy đang làm việc. Đo trên máy dev (IDE, build, nhiều tiến trình):
+
+| Thành phần | CPU (một nhân) | Ghi chú |
+|---|---|---|
+| macsentryd | ~3–4% | shell nên tốn chủ yếu ở fork; chỉ băm/quét lại khi dữ liệu đổi (theo ctime) |
+| macsentry-es + eslogger | ~3% | gần hết là `exec`; tắt bằng `ES_EXEC=0` trong `/etc/macsentry.conf` |
+| MacSentry.app | ~0% | dùng kết quả quét của daemon (`/var/run/macsentry/remote`), không tự chạy netstat/who |
+
+- Daemon và helper chạy với `ProcessType = Background` + `LowPriorityIO`: macOS giới hạn CPU/I/O để ưu tiên
+  công việc của người dùng (cảnh báo có thể chậm vài giây khi máy bận).
+- Khi helper ES chạy, daemon không đọc `log stream` (~5% một nhân) và giãn các lần quét dự phòng.
+
 ## Ghi chú
 
 - macOS ẩn socket TCP với `netstat` khi được gọi từ binary không phải của hệ thống, nên app giao việc chạy

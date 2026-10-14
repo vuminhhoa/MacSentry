@@ -22,7 +22,11 @@ if [ ! -f /etc/macsentry.conf ] || [ "${1:-}" = --reconfigure ]; then
   echo "URL heartbeat (dead-man switch, vd https://hc-ping.com/<uuid> từ healthchecks.io — daemon ping mỗi phút,"
   echo "dịch vụ đó báo cho bạn khi mất ping: daemon bị gỡ / máy bị tắt nguồn)."
   read -r -p "URL heartbeat (Enter = bỏ qua): " HEARTBEAT_URL
-  ( umask 077; printf 'TOKEN=%s\nCHAT=%s\nHEARTBEAT_URL=%s\n' "$TOKEN" "$CHAT" "$HEARTBEAT_URL" > /etc/macsentry.conf )
+  echo "Theo dõi lệnh nguy hiểm (exec: reverse shell, đọc keychain, tắt bảo vệ...) tốn thêm ~3% một nhân CPU"
+  echo "trên máy chạy nhiều tiến trình (IDE, build). Tắt thì vẫn còn các giám sát khác."
+  read -r -p "Bật theo dõi exec? [Y/n]: " ES_EXEC_ANS
+  case $ES_EXEC_ANS in [nN]*) ES_EXEC=0 ;; *) ES_EXEC=1 ;; esac
+  ( umask 077; printf 'TOKEN=%s\nCHAT=%s\nHEARTBEAT_URL=%s\nES_EXEC=%s\n' "$TOKEN" "$CHAT" "$HEARTBEAT_URL" "$ES_EXEC" > /etc/macsentry.conf )
 fi
 chown root:wheel /etc/macsentry.conf; chmod 600 /etc/macsentry.conf
 
@@ -60,6 +64,10 @@ fi
 
 mkdir -p /usr/local/libexec /var/db/macsentry
 install -o root -g wheel -m 755 macsentryd.sh /usr/local/libexec/macsentryd
+# Module của daemon: thay cả thư mục (xoá module cũ không còn dùng), chỉ root ghi được
+rm -rf /usr/local/libexec/macsentry
+install -d -o root -g wheel -m 755 /usr/local/libexec/macsentry
+install -o root -g wheel -m 644 lib/*.sh /usr/local/libexec/macsentry/
 install -o root -g wheel -m 755 "$ES_BIN" /usr/local/libexec/macsentry-es
 chmod 700 /var/db/macsentry
 
@@ -82,6 +90,10 @@ write_plist() { # $1 = label, $2.. = ProgramArguments
   <key>RunAtLoad</key><true/>
   <key>KeepAlive</key><true/>
   <key>ExitTimeOut</key><integer>15</integer>
+  <!-- Ưu tiên thấp (khuyến nghị của launchd.plist(5)): macOS giới hạn CPU / I/O của job để không ảnh hưởng
+       công việc của người dùng; giám sát chậm vài giây khi máy bận là chấp nhận được -->
+  <key>ProcessType</key><string>Background</string>
+  <key>LowPriorityIO</key><true/>
 </dict></plist>
 PLIST
   chown root:wheel "/Library/LaunchDaemons/$label.plist"; chmod 644 "/Library/LaunchDaemons/$label.plist"
