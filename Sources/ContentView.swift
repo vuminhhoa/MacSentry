@@ -4,6 +4,23 @@ import AppKit
 // MARK: - Nội dung cửa sổ chính: thanh bên + trang chi tiết (khung cửa sổ/toolbar ở MainWindow.swift)
 
 let timeFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "dd/MM/yyyy HH:mm:ss"; return f }()
+private let shortFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "dd/MM HH:mm:ss"; return f }()
+private let compactFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "dd/MM HH:mm"; return f }()
+
+/// Ngày giờ trong ô bảng, tự rút gọn theo bề ngang cột như Finder: đủ chỗ thì đầy đủ,
+/// hẹp hơn thì bỏ năm, hẹp nữa thì bỏ giây — luôn giữ ngày (bảng có dòng của nhiều ngày khác nhau)
+struct DateText: View {
+    let date: Date
+    var body: some View {
+        ViewThatFits(in: .horizontal) {
+            Text(timeFmt.string(from: date))
+            Text(shortFmt.string(from: date))
+            Text(compactFmt.string(from: date))
+        }
+        .monospacedDigit()
+        .help(timeFmt.string(from: date))
+    }
+}
 
 func durationString(_ from: Date, _ to: Date) -> String {
     let s = Int(to.timeIntervalSince(from))

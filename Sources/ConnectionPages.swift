@@ -59,23 +59,24 @@ struct ActivePage: View {
                     TableColumn("IP", value: \.ip) { c in
                         HStack(spacing: 6) { TrustBadge(trusted: monitor.isTrusted(c.ip)); Text(c.ip) }
                     }
-                    .width(min: 120, ideal: 160)
+                    .width(min: 110, ideal: 140)
                     .customizationID("ip")
                     .disabledCustomizationBehavior(.visibility)
-                    TableColumn("Dịch vụ", value: \.service).width(min: 110, ideal: 160).customizationID("service")
-                    TableColumn("Cổng / TTY", value: \.remotePort).width(min: 60, ideal: 80).customizationID("port")
+                    TableColumn("Dịch vụ", value: \.service).width(min: 80, ideal: 130).customizationID("service")
+                    TableColumn("Cổng / TTY", value: \.remotePort).width(min: 50, ideal: 75).customizationID("port")
                     TableColumn("User", value: \.userText) { c in
                         Text(c.user ?? "—").foregroundStyle(c.user == nil ? .secondary : .primary)
                     }
-                    .width(min: 50, ideal: 80)
+                    .width(min: 50, ideal: 70)
                     .customizationID("user")
-                    TableColumn("Bắt đầu", value: \.firstSeen) { Text(timeFmt.string(from: $0.firstSeen)).monospacedDigit() }
-                        .width(min: 125, ideal: 140)
+                    TableColumn("Bắt đầu", value: \.firstSeen) { DateText(date: $0.firstSeen) }
+                        .width(min: 70, ideal: 145)
                         .customizationID("start")
                     // Cột cuối: tự lấp phần còn lại, không kéo mép phải / ẩn
                     TableColumn("Thời lượng") { c in
                         TimelineView(.periodic(from: .now, by: 1)) { ctx in Text(durationString(c.firstSeen, ctx.date)).monospacedDigit() }
                     }
+                    .width(min: 70)
                     .customizationID("duration")
                     .disabledCustomizationBehavior([.resize, .visibility])
                 }
@@ -130,29 +131,30 @@ struct HistoryPage: View {
                     TableColumn("IP", value: \.ip) { e in
                         HStack(spacing: 6) { TrustBadge(trusted: monitor.isTrusted(e.ip)); Text(e.ip) }
                     }
-                    .width(min: 120, ideal: 160)
+                    .width(min: 110, ideal: 140)
                     .customizationID("ip")
                     .disabledCustomizationBehavior(.visibility)
-                    TableColumn("Dịch vụ", value: \.serviceText).width(min: 110, ideal: 160).customizationID("service")
+                    TableColumn("Dịch vụ", value: \.serviceText).width(min: 80, ideal: 120).customizationID("service")
                     TableColumn("User", value: \.userText) { e in
                         Text(e.user ?? "—").foregroundStyle(e.user == nil ? .secondary : .primary)
                     }
-                    .width(min: 50, ideal: 80)
+                    .width(min: 50, ideal: 65)
                     .customizationID("user")
-                    TableColumn("Bắt đầu", value: \.start) { Text(timeFmt.string(from: $0.start)).monospacedDigit() }
-                        .width(min: 125, ideal: 140)
+                    TableColumn("Bắt đầu", value: \.start) { DateText(date: $0.start) }
+                        .width(min: 70, ideal: 145)
                         .customizationID("start")
                     TableColumn("Kết thúc", value: \.endSort) { e in
-                        if let end = e.end { Text(timeFmt.string(from: end)).monospacedDigit() }
+                        if let end = e.end { DateText(date: end) }
                         else { StatusPill(text: "đang mở", color: .green) }
                     }
-                    .width(min: 125, ideal: 140)
+                    .width(min: 70, ideal: 145)
                     .customizationID("end")
                     // Cột cuối: tự lấp phần còn lại, không kéo mép phải / ẩn
                     TableColumn("Thời lượng", value: \.duration) { e in
                         if let end = e.end { Text(durationString(e.start, end)).monospacedDigit() }
                         else { TimelineView(.periodic(from: .now, by: 1)) { ctx in Text(durationString(e.start, ctx.date)).monospacedDigit() } }
                     }
+                    .width(min: 70)
                     .customizationID("duration")
                     .disabledCustomizationBehavior([.resize, .visibility])
                 }

@@ -10,11 +10,22 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     private var subs: Set<AnyCancellable> = []
     private var lastPage: Page?
 
-    private static let backID = NSToolbarItem.Identifier("back")
-    private static let forwardID = NSToolbarItem.Identifier("forward")
+    private static let navID = NSToolbarItem.Identifier("navigation")
     private static let searchID = NSToolbarItem.Identifier("search")
-    private var backItem: NSToolbarItem?
-    private var forwardItem: NSToolbarItem?
+    /// Cụm ‹ › dạng segmented như Finder / System Settings: một khối kính duy nhất, bật/tắt từng nửa
+    /// không làm toolbar tính lại cách gộp nút
+    private lazy var navItem: NSToolbarItemGroup = {
+        let g = NSToolbarItemGroup(
+            itemIdentifier: Self.navID,
+            images: [NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "Quay lại")!,
+                     NSImage(systemSymbolName: "chevron.forward", accessibilityDescription: "Tiếp")!],
+            selectionMode: .momentary, labels: ["Quay lại", "Tiếp"], target: self, action: #selector(navigate(_:)))
+        g.controlRepresentation = .expanded
+        g.isNavigational = true
+        g.autovalidates = false
+        g.subitems.forEach { $0.autovalidates = false; $0.isEnabled = false }
+        return g
+    }()
     private lazy var searchItem: NSSearchToolbarItem = {
         let s = NSSearchToolbarItem(itemIdentifier: Self.searchID)
         s.searchField.delegate = self
@@ -61,25 +72,23 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     required init?(coder: NSCoder) { fatalError() }
 
     private func sync() {
-        guard let w = window, let tb = w.toolbar else { return }
+        guard let w = window else { return }
         let p = ui.page
         if w.title != p.title { w.title = p.title }
-        // Chỉ gán khi đổi: hàm này chạy ở mọi thay đổi của ViewState (gõ phím, chọn dòng…); gán lại toolTip /
-        // isEnabled làm AppKit dựng lại vùng tooltip, con trỏ của cửa sổ
-        set(backItem, enabled: !ui.back.isEmpty, tip: ui.back.last.map { "Quay lại: \($0.title)" } ?? "Quay lại")
-        set(forwardItem, enabled: !ui.forward.isEmpty, tip: ui.forward.last.map { "Tiếp: \($0.title)" } ?? "Tiếp")
+        // Chỉ gán khi đổi: hàm này chạy ở mọi thay đổi của ViewState (gõ phím, chọn dòng…)
+        let nav = navItem.subitems
+        set(nav[0], enabled: !ui.back.isEmpty, tip: ui.back.last.map { "Quay lại: \($0.title)" } ?? "Quay lại")
+        set(nav[1], enabled: !ui.forward.isEmpty, tip: ui.forward.last.map { "Tiếp: \($0.title)" } ?? "Tiếp")
         guard p != lastPage else { return }
         lastPage = p
-        // Ô tìm kiếm chỉ có ở trang có danh sách; mỗi trang giữ từ khoá riêng
-        let idx = tb.items.firstIndex { $0.itemIdentifier == Self.searchID }
-        if let prompt = p.searchPrompt {
-            if idx == nil { tb.insertItem(withItemIdentifier: Self.searchID, at: tb.items.count) }
-            searchItem.searchField.placeholderString = prompt
-            searchItem.searchField.stringValue = ui.queries[p] ?? ""
-        } else if let idx {
-            searchItem.endSearchInteraction()
-            tb.removeItem(at: idx)
-        }
+        // Ô tìm kiếm luôn hiện và luôn bật: thêm/gỡ, ẩn/hiện hay bật/tắt ô đều làm toolbar (macOS 26+) vẽ lại
+        // cả khối kính chứa cụm ‹ › → nhấp nháy khi đổi trang. Trang không có danh sách: gõ là chuyển sang tìm sự kiện
+        let field = searchItem.searchField
+        let target = p.searchPrompt == nil ? Page.events : p
+        let prompt = target.searchPrompt ?? ""
+        if field.placeholderString != prompt { field.placeholderString = prompt }
+        let q = p.searchPrompt == nil ? "" : ui.queries[p] ?? ""
+        if field.stringValue != q { field.stringValue = q }
     }
 
     private func set(_ item: NSToolbarItem?, enabled: Bool, tip: String) {
@@ -89,51 +98,39 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     }
 
     func focusSearch() {
-        guard ui.page.searchPrompt != nil else { return }
         searchItem.beginSearchInteraction()
     }
 
     // MARK: NSSearchFieldDelegate
     func controlTextDidChange(_ n: Notification) {
-        if let f = n.object as? NSSearchField { ui.queries[ui.page] = f.stringValue }
+        guard let f = n.object as? NSSearchField else { return }
+        if ui.page.searchPrompt == nil {
+            // Tổng quan / Cài đặt: gõ vào ô tìm kiếm → mở trang Sự kiện với từ khoá này
+            guard !f.stringValue.isEmpty else { return }
+            ui.queries[.events] = f.stringValue
+            ui.page = .events
+        } else {
+            ui.queries[ui.page] = f.stringValue
+        }
     }
 
     // MARK: NSToolbarDelegate
     func toolbarDefaultItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.sidebarTrackingSeparator, Self.backID, Self.forwardID, .flexibleSpace]
+        [.sidebarTrackingSeparator, Self.navID, .flexibleSpace, Self.searchID]
     }
     func toolbarAllowedItemIdentifiers(_ toolbar: NSToolbar) -> [NSToolbarItem.Identifier] {
-        [.sidebarTrackingSeparator, Self.backID, Self.forwardID, .flexibleSpace, Self.searchID]
+        [.sidebarTrackingSeparator, Self.navID, .flexibleSpace, Self.searchID]
     }
 
     func toolbar(_ toolbar: NSToolbar, itemForItemIdentifier id: NSToolbarItem.Identifier, willBeInsertedIntoToolbar flag: Bool) -> NSToolbarItem? {
         switch id {
-        case Self.backID:
-            backItem = navItem(id, "chevron.backward", "Quay lại", #selector(goBack))
-            return backItem
-        case Self.forwardID:
-            forwardItem = navItem(id, "chevron.forward", "Tiếp", #selector(goForward))
-            return forwardItem
-        case Self.searchID:
-            return searchItem
-        default:
-            return nil
+        case Self.navID: return navItem
+        case Self.searchID: return searchItem
+        default: return nil
         }
     }
 
-    private func navItem(_ id: NSToolbarItem.Identifier, _ symbol: String, _ label: String, _ action: Selector) -> NSToolbarItem {
-        let i = NSToolbarItem(itemIdentifier: id)
-        i.image = NSImage(systemSymbolName: symbol, accessibilityDescription: label)
-        i.label = label
-        i.target = self
-        i.action = action
-        i.isBordered = true
-        i.isNavigational = true
-        i.autovalidates = false
-        i.isEnabled = false
-        return i
+    @objc private func navigate(_ g: NSToolbarItemGroup) {
+        if g.selectedIndex == 0 { ui.goBack() } else { ui.goForward() }
     }
-
-    @objc private func goBack() { ui.goBack() }
-    @objc private func goForward() { ui.goForward() }
 }

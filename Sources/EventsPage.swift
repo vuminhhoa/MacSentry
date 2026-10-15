@@ -57,9 +57,11 @@ struct EventsPage: View {
                 // Thanh trạng thái xếp hẳn bên dưới: VSplitView (NSSplitView) không né safeAreaBar
                 // nên khung chi tiết sẽ chạy xuống dưới thanh và bị chữ đè lên
                 VStack(spacing: 0) {
+                    // Khung chi tiết có trần chiều cao: cửa sổ lớn thì phần thêm dành cho bảng
+                    // (VSplitView chia đều phần thêm, bỏ qua idealHeight)
                     VSplitView {
-                        table(data).frame(minHeight: 160)
-                        detail.frame(minHeight: 140, idealHeight: 220)
+                        table(data).frame(minHeight: 150, maxHeight: .infinity)
+                        detail.frame(minHeight: 120, idealHeight: 220, maxHeight: 280)
                     }
                     Divider()
                     statusBar(data.count)
@@ -110,11 +112,14 @@ struct EventsPage: View {
                 .width(30)
                 .customizationID("level")
             TableColumn("Thời gian") { e in
-                Text(e.time).monospacedDigit().foregroundStyle(.secondary)
-                    // Cuộn tới dòng cuối → đọc thêm phần log cũ hơn (bảng chỉ dựng các dòng đang hiển thị)
-                    .onAppear { if e.id == lastID && log.hasOlder { log.loadOlder() } }
+                Group {
+                    if let d = e.date { DateText(date: d) } else { Text(e.time).monospacedDigit() }
+                }
+                .foregroundStyle(.secondary)
+                // Cuộn tới dòng cuối → đọc thêm phần log cũ hơn (bảng chỉ dựng các dòng đang hiển thị)
+                .onAppear { if e.id == lastID && log.hasOlder { log.loadOlder() } }
             }
-            .width(min: 150, ideal: 158, max: 200)
+            .width(min: 70, ideal: 155, max: 200)
             .customizationID("time")
             // Cột cuối: không đặt độ rộng → tự lấp phần còn lại; không cho kéo mép phải / ẩn
             TableColumn("Nội dung") { e in
