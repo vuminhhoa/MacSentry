@@ -193,8 +193,16 @@ final class Monitor: ObservableObject {
 
     func saveHistory() { Store.save(history, to: Store.historyURL) }
 
-    func toggleTrust(_ ip: String) {
-        if trusted.contains(ip) { trusted.remove(ip) } else { trusted.insert(ip) }
+    /// IP tin cậy hoặc kết nối từ chính máy này (giống cách alert() xử lý)
+    func isTrusted(_ ip: String) -> Bool { trusted.contains(ip) || ip.hasPrefix("127.") || ip == "::1" || ip == "localhost" }
+
+    func toggleTrust(_ ip: String) { setTrust([ip], !trusted.contains(ip)) }
+
+    func setTrust(_ ips: [String], _ on: Bool) {
+        var t = trusted
+        for ip in ips { if on { t.insert(ip) } else { t.remove(ip) } }
+        guard t != trusted else { return }
+        trusted = t
         Store.save(trusted, to: Store.trustedURL)
         onChange?()
     }

@@ -46,7 +46,7 @@ extension AppDelegate {
             a.addButton(withTitle: "Xem danh sách")
             switch a.runModal() {
             case .alertSecondButtonReturn: monitor.toggleTrust(c.ip)
-            case .alertThirdButtonReturn: openWindow()
+            case .alertThirdButtonReturn: showWindow(.active)
             default: break
             }
         }

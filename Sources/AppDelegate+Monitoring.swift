@@ -21,6 +21,8 @@ extension AppDelegate {
                     && FileManager.default.fileExists(atPath: Store.daemonRemotePath)
                 // Daemon chạy lại sau gián đoạn → tắt job netstat dự phòng app đã tự bật
                 if Monitor.daemonRunning && self.monitor.helperStarted { Monitor.stopHelper(); self.monitor.helperStarted = false }
+                let comps = Self.watched.map { Component(name: $0.0, installed: FileManager.default.fileExists(atPath: $0.1), running: ps.contains($0.2)) }
+                if comps != self.ui.components { self.ui.components = comps }
                 for (name, plist, marker) in Self.watched where FileManager.default.fileExists(atPath: plist) {
                     if ps.contains(marker) {
                         if (self.daemonMissing[name] ?? 0) >= 3 {

@@ -3,8 +3,11 @@ import UserNotifications
 
 // MARK: - App delegate / status bar
 
-final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSMenuDelegate {
+final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCenterDelegate, NSMenuDelegate, NSWindowDelegate {
     let monitor = Monitor()
+    let ui = ViewState()
+    let eventLog = EventLog()
+    var mainWindow: MainWindowController?
     var statusItem: NSStatusItem!
     var window: NSWindow?
     var notificationsAllowed = false
@@ -32,6 +35,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         if !LaunchAtLogin.runningUnderLaunchd { LaunchAtLogin.handOverToLaunchd() }
         LaunchAtLogin.ensure()
 
+        MainMenu.install()
+
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
         menu.delegate = self
@@ -40,7 +45,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let center = UNUserNotificationCenter.current()
         center.delegate = self
         center.requestAuthorization(options: [.alert, .sound, .badge]) { ok, _ in
-            DispatchQueue.main.async { self.notificationsAllowed = ok }
+            DispatchQueue.main.async { self.notificationsAllowed = ok; self.ui.notificationsAllowed = ok }
         }
 
         monitor.onChange = { [weak self] in self?.refreshStatusItem() }
@@ -57,8 +62,24 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         }
         notifyStartup()
         observeSystemEvents()
+        checkDaemons()
         monitor.start()
     }
+
+    /// Đọc lại quyền thông báo từ hệ thống — người dùng có thể bật/tắt trong Cài đặt bất cứ lúc nào
+    func refreshNotificationStatus() {
+        UNUserNotificationCenter.current().getNotificationSettings { st in
+            let ok = [.authorized, .provisional].contains(st.authorizationStatus) && st.alertSetting != .disabled
+            DispatchQueue.main.async {
+                self.notificationsAllowed = ok
+                if self.ui.notificationsAllowed != ok { self.ui.notificationsAllowed = ok }
+            }
+        }
+    }
+
+    // Quay lại app (vd. từ Cài đặt hệ thống) → cập nhật trạng thái quyền thông báo
+    func applicationDidBecomeActive(_ note: Notification) { refreshNotificationStatus() }
+    func windowDidBecomeKey(_ note: Notification) { refreshNotificationStatus() }
 
     func observeSystemEvents() {
         let ws = NSWorkspace.shared.notificationCenter

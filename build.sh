@@ -9,6 +9,10 @@ swiftc -O -o "$APP/Contents/MacOS/MacSentry" Sources/*.swift \
   -framework AppKit -framework SwiftUI -framework UserNotifications -framework CoreAudio -framework CoreMediaIO 2>&1 | grep -v "^$" || true
 test -x "$APP/Contents/MacOS/MacSentry"
 
+# Logo: app tự vẽ ra các cỡ PNG → đóng thành AppIcon.icns (Finder, System Settings, Dock đọc icon từ file này)
+"$APP/Contents/MacOS/MacSentry" --render-icon build/AppIcon.iconset
+iconutil -c icns build/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
+
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
@@ -17,6 +21,7 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleName</key><string>MacSentry</string>
   <key>CFBundleDisplayName</key><string>MacSentry</string>
   <key>CFBundleExecutable</key><string>MacSentry</string>
+  <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>1.0</string>
   <key>CFBundleVersion</key><string>1</string>
@@ -46,5 +51,9 @@ mkdir -p "$HOME/Applications"
 launchctl bootout "gui/$(id -u)/io.github.vuminhhoa.macsentry" 2>/dev/null || true
 pkill -x MacSentry || true
 rm -rf "$DEST" && cp -R "$APP" "$DEST"
+# Báo LaunchServices đọc lại bundle (icon mới hiện trong Finder / System Settings)
+LSREGISTER=/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister
+"$LSREGISTER" -u "$APP" 2>/dev/null || true   # bỏ bản trong build/ để hệ thống chỉ biết một app (tránh lấy nhầm icon / quyền)
+"$LSREGISTER" -f "$DEST" || true
 open "$DEST"   # app tự giao lại cho launchd
 echo "Đã cài và chạy: $DEST"
