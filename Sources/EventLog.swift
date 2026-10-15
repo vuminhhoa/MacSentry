@@ -66,6 +66,13 @@ final class EventLog: ObservableObject {
 
     var hasOlder: Bool { loadedFrom > 0 }
 
+    /// Các sự kiện từ `cutoff` trở về sau. `events` mới nhất ở đầu nên chỉ duyệt tới chỗ cũ hơn mốc rồi dừng,
+    /// thay vì lọc cả mảng (dòng không có thời gian coi như cùng lúc với dòng kế trên nó)
+    func since(_ cutoff: Date?) -> ArraySlice<LogEvent> {
+        guard let cutoff else { return events[...] }
+        return events.prefix { ($0.date ?? .distantFuture) >= cutoff }
+    }
+
     // Trạng thái đọc file — chỉ dùng trên hàng đợi q
     private let q = DispatchQueue(label: "macsentry.eventlog", qos: .userInitiated)
     private var started = false
@@ -88,7 +95,7 @@ final class EventLog: ObservableObject {
     func refresh() {
         q.async { [self] in
             guard let h = FileHandle(forReadingAtPath: Store.daemonLogPath) else {
-                DispatchQueue.main.async { self.unreadable = true }
+                DispatchQueue.main.async { if !self.unreadable { self.unreadable = true } }
                 return
             }
             defer { try? h.close() }
@@ -122,10 +129,24 @@ final class EventLog: ObservableObject {
     private func publish(size: UInt64, _ update: @escaping ([LogEvent]) -> [LogEvent]) {
         let from = readFrom
         DispatchQueue.main.async {
-            self.unreadable = false
+            // Chỉ gán khi đổi: mỗi lần gán @Published là một lượt vẽ lại mọi view đang theo dõi
+            if self.unreadable { self.unreadable = false }
             self.events = update(self.events)
-            self.fileSize = size
-            self.loadedFrom = from
+            if self.fileSize != size { self.fileSize = size }
+            if self.loadedFrom != from { self.loadedFrom = from }
+        }
+    }
+
+    /// Đóng cửa sổ: bỏ phần log cũ đã đọc thêm (có thể rất lớn sau khi tìm kiếm), chỉ giữ khối cuối file
+    func trim() {
+        q.async { [self] in
+            guard started, readTo > Self.chunk, readFrom < readTo - Self.chunk else { return }
+            let keep = readTo - Self.chunk
+            readFrom = keep
+            DispatchQueue.main.async {
+                if let i = self.events.firstIndex(where: { $0.id < keep }) { self.events.removeSubrange(i...) }
+                self.loadedFrom = keep
+            }
         }
     }
 

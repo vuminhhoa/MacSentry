@@ -47,6 +47,23 @@ enum MainMenu {
         window.addItem(withTitle: "Đóng", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         NSApp.windowsMenu = window
 
+        // Biểu tượng cho các lệnh chính (macOS 26+). Không ép hiện: từ macOS 27 AppKit tự quyết có vẽ icon hay không
+        let icons: [Selector: String] = [
+            #selector(AppDelegate.openSettings): "gearshape",
+            Selector(("undo:")): "arrow.uturn.backward", Selector(("redo:")): "arrow.uturn.forward",
+            #selector(NSText.cut(_:)): "scissors", #selector(NSText.copy(_:)): "doc.on.doc",
+            #selector(NSText.paste(_:)): "doc.on.clipboard", #selector(NSText.delete(_:)): "delete.left",
+            #selector(NSText.selectAll(_:)): "checkmark.circle", #selector(AppDelegate.focusSearch(_:)): "magnifyingglass",
+            #selector(AppDelegate.goBack(_:)): "chevron.backward", #selector(AppDelegate.goForward(_:)): "chevron.forward",
+            #selector(NSWindow.performMiniaturize(_:)): "minus.rectangle", #selector(NSWindow.performClose(_:)): "xmark.rectangle",
+        ]
+        for m in main.items.compactMap(\.submenu) {
+            for i in m.items {
+                let name = i.action == #selector(AppDelegate.selectPage(_:)) ? Page(rawValue: i.tag)?.icon : i.action.flatMap { icons[$0] }
+                if let name { i.image = NSImage(systemSymbolName: name, accessibilityDescription: nil) }
+            }
+        }
+
         NSApp.mainMenu = main
     }
 

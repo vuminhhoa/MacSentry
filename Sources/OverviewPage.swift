@@ -32,12 +32,13 @@ struct OverviewPage: View {
     @ObservedObject var ui: ViewState
     @ObservedObject var log: EventLog
 
-    var today: [LogEvent] { log.events.filter { TimeRange.today.contains($0.date) } }
+    var today: ArraySlice<LogEvent> { log.since(TimeRange.today.cutoff) }
     var recent: [LogEvent] { Array(log.events.lazy.filter { $0.level != .info }.prefix(6)) }
 
     var body: some View {
         let prot = Protection(monitor: monitor, ui: ui)
-        let todayAlerts = today.filter { $0.level == .alert }.count
+        let today = today
+        let todayAlerts = today.lazy.filter { $0.level == .alert }.count
         Form {
             // Đầu trang: biểu tượng lớn + mô tả, như đầu các trang trong System Settings
             Section {

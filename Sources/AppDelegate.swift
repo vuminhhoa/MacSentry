@@ -8,7 +8,9 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     let ui = ViewState()
     let eventLog = EventLog()
     var mainWindow: MainWindowController?
+    var navigationMonitor: Any?
     var statusItem: NSStatusItem!
+    var statusKey = ""
     var window: NSWindow?
     var notificationsAllowed = false
     var alertShowing = false

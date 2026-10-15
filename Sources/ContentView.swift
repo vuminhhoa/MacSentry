@@ -35,7 +35,7 @@ enum Page: Int, CaseIterable, Identifiable {
         case .overview: "lock.shield.fill"
         case .active: "dot.radiowaves.left.and.right"
         case .history: "clock.arrow.circlepath"
-        case .events: "list.bullet.rectangle.fill"
+        case .events: "list.bullet"
         case .trusted: "checkmark.shield.fill"
         case .settings: "gearshape.fill"
         }
@@ -72,13 +72,13 @@ struct Component: Hashable {
 enum TimeRange: Int, CaseIterable {
     case all, hour, today, week
     var title: String { switch self { case .all: "Mọi lúc"; case .hour: "1 giờ qua"; case .today: "Hôm nay"; case .week: "7 ngày qua" } }
-    func contains(_ d: Date?) -> Bool {
-        guard let d else { return self == .all }
+    /// Mốc bắt đầu của khoảng (nil = không giới hạn) — tính một lần cho cả lượt lọc
+    var cutoff: Date? {
         switch self {
-        case .all: return true
-        case .hour: return d > Date().addingTimeInterval(-3600)
-        case .today: return Calendar.current.isDateInToday(d)
-        case .week: return d > Date().addingTimeInterval(-7 * 86400)
+        case .all: nil
+        case .hour: Date().addingTimeInterval(-3600)
+        case .today: Calendar.current.startOfDay(for: Date())
+        case .week: Date().addingTimeInterval(-7 * 86400)
         }
     }
 }
@@ -120,9 +120,20 @@ final class ViewState: ObservableObject {
     @Published var activeSort = [KeyPathComparator(\RemoteConnection.firstSeen)]
     @Published var historySelection = Set<UUID>()
     @Published var historySort = [KeyPathComparator(\HistoryEntry.start, order: .reverse)]
-    @Published var trustedSelection = Set<String>()
-    @Published var trustedSort = [KeyPathComparator(\TrustedRow.ip)]
     @Published var newTrustedIP = ""
+    // Cấu hình cột của các bảng: chuột phải vào tiêu đề để ẩn/hiện, kéo để đổi thứ tự / độ rộng
+    @Published var activeColumns: TableColumnCustomization<RemoteConnection> = ColumnStore.load("active") ?? .init() {
+        didSet { ColumnStore.save(activeColumns, "active") }
+    }
+    @Published var historyColumns: TableColumnCustomization<HistoryEntry> = ColumnStore.load("history") ?? .init() {
+        didSet { ColumnStore.save(historyColumns, "history") }
+    }
+    @Published var eventColumns: TableColumnCustomization<LogEvent> = ColumnStore.load("events") ?? .init() {
+        didSet { ColumnStore.save(eventColumns, "events") }
+    }
+    // Kết quả lọc / sắp xếp gần nhất của các bảng lớn
+    let historyRows = Memo<HistoryKey, [HistoryEntry]>()
+    let eventRows = Memo<EventsKey, [LogEvent]>()
     /// Từ khoá đã "lắng" 200ms sau lần gõ cuối — lọc theo bản này để gõ không bị giật với bảng lớn
     @Published var settled: [Page: String] = [:]
     let telegramForm = TelegramForm()
@@ -169,7 +180,15 @@ struct SettingsIcon: View {
         RoundedRectangle(cornerRadius: size * 0.27, style: .continuous)
             .fill(color.gradient)
             .frame(width: size, height: size)
-            .overlay(Image(systemName: symbol).font(.system(size: size * 0.55, weight: .semibold)).foregroundStyle(.white))
+            .overlay {
+                // Co mọi ký hiệu vào cùng một khung (≈60% ô) → khoảng đệm đều nhau dù ký hiệu rộng / cao khác nhau
+                Image(systemName: symbol)
+                    .resizable()
+                    .scaledToFit()
+                    .fontWeight(.semibold)
+                    .foregroundStyle(.white)
+                    .frame(width: size * 0.6, height: size * 0.6)
+            }
     }
 }
 
@@ -178,7 +197,7 @@ struct SidebarView: View {
     @ObservedObject var ui: ViewState
     @ObservedObject var log: EventLog
 
-    var alertsToday: Int { log.events.lazy.filter { $0.level == .alert && TimeRange.today.contains($0.date) }.count }
+    var alertsToday: Int { log.since(TimeRange.today.cutoff).lazy.filter { $0.level == .alert }.count }
 
     var body: some View {
         let prot = Protection(monitor: monitor, ui: ui)
@@ -230,8 +249,7 @@ struct DetailView: View {
                 if let t = ui.toast {
                     Label(t, systemImage: "checkmark.circle.fill")
                         .padding(.horizontal, 14).padding(.vertical, 8)
-                        .background(.regularMaterial, in: Capsule())
-                        .overlay(Capsule().strokeBorder(Color.primary.opacity(0.1)))
+                        .glassEffect(.regular, in: Capsule())
                         .padding(.bottom, 40)
                         .transition(.move(edge: .bottom).combined(with: .opacity))
                 }
@@ -253,49 +271,47 @@ struct DetailView: View {
 
 // MARK: - Thành phần dùng chung
 
-/// Thanh lọc mảnh phía trên bảng (kiểu thanh lọc của Mail / Console)
-struct FilterBar<Content: View>: View {
-    @ViewBuilder var content: Content
-    var body: some View {
-        VStack(spacing: 0) {
-            HStack(spacing: 10) { content }
-                .padding(.horizontal, 14).padding(.vertical, 7)
-            Divider()
-        }
+extension View {
+    /// Thanh lọc cố định phía trên bảng, kiểu Console.app. Không dùng `.safeAreaBar(edge: .top)` vì
+    /// hàng tiêu đề cột của Table (NSTableView) không né safe area → bị thanh đè lên
+    func topBar<Bar: View>(@ViewBuilder _ bar: () -> Bar) -> some View {
+        VStack(spacing: 0) { bar(); Divider(); self }
     }
 }
 
+/// Thanh lọc phía trên bảng — gắn bằng `.topBar { … }`
+struct FilterBar<Content: View>: View {
+    @ViewBuilder var content: Content
+    var body: some View {
+        HStack(spacing: 10) { content }
+            .padding(.horizontal, 14).padding(.vertical, 7)
+    }
+}
+
+/// Trạng thái trống chuẩn của hệ thống (ContentUnavailableView)
 struct EmptyState: View {
     let icon: String
     let title: String
     var message = ""
 
     var body: some View {
-        VStack(spacing: 10) {
-            Image(systemName: icon).font(.system(size: 40, weight: .light)).foregroundStyle(.tertiary)
-            Text(title).font(.title3.weight(.medium))
-            if !message.isEmpty {
-                Text(message).foregroundStyle(.secondary).multilineTextAlignment(.center).frame(maxWidth: 420)
-            }
+        ContentUnavailableView {
+            Label(title, systemImage: icon)
+        } description: {
+            if !message.isEmpty { Text(message) }
         }
-        .frame(maxWidth: .infinity, maxHeight: .infinity)
-        .padding()
     }
 }
 
-/// Dòng trạng thái mảnh ở cuối trang (số dòng, thao tác phụ)
+/// Dòng trạng thái ở cuối trang (số dòng, thao tác phụ) — gắn bằng `.safeAreaBar(edge: .bottom)`
 struct StatusBar<Content: View>: View {
     @ViewBuilder var content: Content
     var body: some View {
-        VStack(spacing: 0) {
-            Divider()
-            HStack(spacing: 12) { content }
-                .font(.callout)
-                .foregroundStyle(.secondary)
-                .padding(.horizontal, 14).padding(.vertical, 6)
-                .frame(maxWidth: .infinity, alignment: .leading)
-        }
-        .background(.bar)
+        HStack(spacing: 12) { content }
+            .font(.callout)
+            .foregroundStyle(.secondary)
+            .padding(.horizontal, 14).padding(.vertical, 6)
+            .frame(maxWidth: .infinity, alignment: .leading)
     }
 }
 
@@ -308,5 +324,30 @@ struct StatusPill: View {
             Circle().fill(color).frame(width: 8, height: 8)
             Text(text).foregroundStyle(.secondary)
         }
+    }
+}
+
+
+/// Nhớ kết quả tính gần nhất theo khoá đầu vào: lọc / sắp xếp bảng không chạy lại ở mỗi lần vẽ
+/// (đổi lựa chọn, toast, gõ phím ở trang khác…) mà chỉ khi dữ liệu hoặc bộ lọc thực sự đổi.
+/// Mảng trong khoá so sánh rất nhanh khi chưa đổi (cùng bộ nhớ đệm).
+final class Memo<Key: Equatable, Value> {
+    private var key: Key?
+    private var value: Value?
+    func get(_ k: Key, _ compute: () -> Value) -> Value {
+        if let value, key == k { return value }
+        let v = compute()
+        key = k; value = v
+        return v
+    }
+}
+
+/// Cấu hình cột (ẩn/hiện, thứ tự, độ rộng) của từng bảng — SwiftUI không tự lưu nên ghi vào UserDefaults
+enum ColumnStore {
+    static func load<T: Decodable>(_ key: String) -> T? {
+        UserDefaults.standard.data(forKey: "columns." + key).flatMap { try? JSONDecoder().decode(T.self, from: $0) }
+    }
+    static func save<T: Encodable>(_ value: T, _ key: String) {
+        if let d = try? JSONEncoder().encode(value) { UserDefaults.standard.set(d, forKey: "columns." + key) }
     }
 }

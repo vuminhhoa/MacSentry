@@ -36,6 +36,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         side.canCollapse = false
         let detail = NSSplitViewItem(viewController: detailVC)
         detail.minimumThickness = 640
+        // Không bật automaticallyAdjustsSafeAreaInsets: nội dung trang nằm chồng dưới thanh bên thì các vùng con trỏ
+        // của nó (bảng, ô nhập) đè lên vùng kéo đổi cỡ ở mép thanh bên → con trỏ nhấp nháy giữa mũi tên và ↔
         split.splitViewItems = [side, detail]
 
         let w = NSWindow(contentViewController: split)
@@ -62,10 +64,10 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         guard let w = window, let tb = w.toolbar else { return }
         let p = ui.page
         if w.title != p.title { w.title = p.title }
-        backItem?.isEnabled = !ui.back.isEmpty
-        forwardItem?.isEnabled = !ui.forward.isEmpty
-        backItem?.toolTip = ui.back.last.map { "Quay lại: \($0.title)" } ?? "Quay lại"
-        forwardItem?.toolTip = ui.forward.last.map { "Tiếp: \($0.title)" } ?? "Tiếp"
+        // Chỉ gán khi đổi: hàm này chạy ở mọi thay đổi của ViewState (gõ phím, chọn dòng…); gán lại toolTip /
+        // isEnabled làm AppKit dựng lại vùng tooltip, con trỏ của cửa sổ
+        set(backItem, enabled: !ui.back.isEmpty, tip: ui.back.last.map { "Quay lại: \($0.title)" } ?? "Quay lại")
+        set(forwardItem, enabled: !ui.forward.isEmpty, tip: ui.forward.last.map { "Tiếp: \($0.title)" } ?? "Tiếp")
         guard p != lastPage else { return }
         lastPage = p
         // Ô tìm kiếm chỉ có ở trang có danh sách; mỗi trang giữ từ khoá riêng
@@ -78,6 +80,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
             searchItem.endSearchInteraction()
             tb.removeItem(at: idx)
         }
+    }
+
+    private func set(_ item: NSToolbarItem?, enabled: Bool, tip: String) {
+        guard let item else { return }
+        if item.isEnabled != enabled { item.isEnabled = enabled }
+        if item.toolTip != tip { item.toolTip = tip }
     }
 
     func focusSearch() {

@@ -5,23 +5,24 @@ import SwiftUI
 
 extension AppDelegate {
     func refreshStatusItem() {
+        guard let button = statusItem.button else { return }
         let count = monitor.active.count
         let untrusted = monitor.active.contains { !monitor.isTrusted($0.ip) }
-        if let button = statusItem.button {
-            let symbol = count == 0 ? "lock.shield" : (untrusted ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
-            let img = NSImage(systemSymbolName: symbol, accessibilityDescription: "MacSentry")
-            if count > 0 && untrusted {
-                let cfg = NSImage.SymbolConfiguration(paletteColors: [.white, .systemRed])
-                button.image = img?.withSymbolConfiguration(cfg)
-                button.image?.isTemplate = false
-            } else {
-                button.image = img
-                button.image?.isTemplate = true
-            }
-            button.title = count > 0 ? " \(count)" : ""
-            button.imagePosition = .imageLeading
-            button.toolTip = count == 0 ? "MacSentry: không có truy cập từ xa" : "MacSentry: \(count) kết nối truy cập từ xa"
-        }
+        let symbol = count == 0 ? "lock.shield" : (untrusted ? "exclamationmark.shield.fill" : "checkmark.shield.fill")
+        // Cỡ ký hiệu khớp với các biểu tượng hệ thống trên thanh menu
+        var cfg = NSImage.SymbolConfiguration(pointSize: 15, weight: .regular)
+        if count > 0 && untrusted { cfg = cfg.applying(.init(paletteColors: [.white, .systemRed])) }
+        let img = NSImage(systemSymbolName: symbol, accessibilityDescription: "MacSentry")?.withSymbolConfiguration(cfg)
+        img?.isTemplate = !(count > 0 && untrusted)      // template: tự đổi màu theo thanh menu sáng / tối
+        let key = "\(symbol)|\(untrusted)|\(count)"
+        guard key != statusKey else { return }          // không vẽ lại thanh menu khi không có gì đổi
+        statusKey = key
+        button.image = img
+        // Không có số → chỉ ảnh, để ảnh nằm giữa ô (imageLeading với tiêu đề rỗng vẫn chừa khoảng bên phải)
+        button.imagePosition = count > 0 ? .imageLeading : .imageOnly
+        button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
+        button.title = count > 0 ? "\(count)" : ""
+        button.toolTip = count == 0 ? "MacSentry: không có truy cập từ xa" : "MacSentry: \(count) kết nối truy cập từ xa"
     }
 
     // Dựng lại menu mỗi lần mở để thời lượng luôn mới
@@ -81,7 +82,7 @@ extension AppDelegate {
             w.setFrameAutosaveName("MacSentryMainWindow")   // nhớ kích thước / vị trí
             mainWindow = wc
             window = w
-            installNavigationGestures()
+            if navigationMonitor == nil { installNavigationGestures() }
         }
         eventLog.start()
         NSApp.setActivationPolicy(.regular)
@@ -92,7 +93,16 @@ extension AppDelegate {
     func windowWillClose(_ note: Notification) {
         guard (note.object as? NSWindow) === window else { return }
         eventLog.stop()
+        eventLog.trim()
         NSApp.setActivationPolicy(.accessory)
+        // Bỏ hẳn cửa sổ: cây SwiftUI ẩn vẫn vẽ lại mỗi khi Monitor/EventLog đổi. Trạng thái giao diện
+        // nằm ở ViewState nên mở lại vẫn như cũ; vị trí/kích thước do frame autosave nhớ
+        DispatchQueue.main.async {
+            guard let w = self.window, !w.isVisible else { return }
+            w.saveFrame(usingName: "MacSentryMainWindow")
+            w.setFrameAutosaveName("")      // nhả tên để cửa sổ mới dùng lại được
+            self.window = nil; self.mainWindow = nil
+        }
     }
 
     // Lệnh từ main menu (đi theo responder chain tới app delegate)
@@ -108,7 +118,7 @@ extension AppDelegate {
 
     /// Nút back/forward của chuột (nút 4/5) và vuốt 3 ngón trên trackpad trong cửa sổ chính
     func installNavigationGestures() {
-        NSEvent.addLocalMonitorForEvents(matching: [.otherMouseUp, .swipe]) { [weak self] e in
+        navigationMonitor = NSEvent.addLocalMonitorForEvents(matching: [.otherMouseUp, .swipe]) { [weak self] e in
             guard let self, e.window != nil, e.window === self.window else { return e }
             switch e.type {
             case .otherMouseUp where e.buttonNumber == 3: self.ui.goBack(); return nil

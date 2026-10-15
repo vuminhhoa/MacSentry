@@ -23,8 +23,7 @@ struct SettingsPage: View {
     var valid: Bool { !form.token.trimmingCharacters(in: .whitespaces).isEmpty && !form.chatId.trimmingCharacters(in: .whitespaces).isEmpty }
 
     var body: some View {
-        VStack(spacing: 0) {
-            Form {
+        Form {
                 Section {
                     LabeledContent("Bot token") {
                         HStack {
@@ -54,7 +53,9 @@ struct SettingsPage: View {
                         Spacer()
                         if form.testing { ProgressView().controlSize(.small) }
                         Button("Gửi thử", action: test).disabled(Telegram.config == nil || dirty || form.testing)
-                        Button("Lưu", action: save).keyboardShortcut("s").disabled(!dirty || !valid)
+                        Button("Lưu", action: save).keyboardShortcut("s")
+                            .buttonStyle(.borderedProminent)    // thao tác chính của nhóm → tô màu nhấn
+                            .disabled(!dirty || !valid)
                     }
                 } header: {
                     Text("Telegram")
@@ -99,9 +100,8 @@ struct SettingsPage: View {
                         Button("Mở bằng Console") { NSWorkspace.shared.open(URL(fileURLWithPath: Store.daemonLogPath)) }
                     }
                 }
-            }
-            .formStyle(.grouped)
         }
+        .formStyle(.grouped)
     }
 
     func open(_ url: String) { if let u = URL(string: url) { NSWorkspace.shared.open(u) } }

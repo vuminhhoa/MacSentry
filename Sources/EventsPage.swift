@@ -19,37 +19,59 @@ struct EventsPage: View {
     @ObservedObject var log: EventLog
     var query: String { ui.settled[.events] ?? "" }
 
+    /// Lọc ngoài `body`: chỉ tính lại khi log / bộ lọc đổi (khoảng thời gian tương đối làm mới mỗi phút)
     var rows: [LogEvent] {
-        let q = SearchQuery(query)
-        let level = ui.eventLevel, range = ui.eventRange
-        if q.isEmpty && level == nil && range == .all { return log.events }
-        return log.events.filter {
-            (level == nil || $0.level == level) && range.contains($0.date) && (q.isEmpty || q.matches($0.key))
+        let key = EventsKey(events: log.events, query: query, level: ui.eventLevel, range: ui.eventRange,
+                            minute: ui.eventRange == .all ? 0 : Int(Date().timeIntervalSince1970 / 60))
+        return ui.eventRows.get(key) {
+            let q = SearchQuery(query)
+            let level = ui.eventLevel
+            let scope = log.since(ui.eventRange.cutoff)      // khoảng thời gian: chỉ duyệt phần đầu mảng
+            if q.isEmpty && level == nil { return scope.count == log.events.count ? log.events : Array(scope) }
+            return scope.filter { (level == nil || $0.level == level) && (q.isEmpty || q.matches($0.key)) }
         }
     }
     var filtering: Bool { !query.isEmpty || ui.eventLevel != nil || ui.eventRange != .all }
-    var selected: LogEvent? { ui.selectedEvent.flatMap { id in log.events.first { $0.id == id } } }
+    var selected: LogEvent? { ui.selectedEvent.flatMap(event) }
+
+    /// `events` xếp theo id (vị trí byte) giảm dần → tìm nhị phân thay vì duyệt cả mảng
+    func event(_ id: UInt64) -> LogEvent? {
+        let ev = log.events
+        var lo = 0, hi = ev.count
+        while lo < hi {
+            let mid = (lo + hi) / 2
+            if ev[mid].id > id { lo = mid + 1 } else { hi = mid }
+        }
+        return lo < ev.count && ev[lo].id == id ? ev[lo] : nil
+    }
 
     var body: some View {
-        VStack(spacing: 0) {
-            filterBar
-            .task(id: ui.queries[.events] ?? "") {
-                try? await Task.sleep(nanoseconds: 200_000_000)
-                ui.settled[.events] = ui.queries[.events] ?? ""
-                // Tìm kiếm phải thấy cả phần log cũ chưa tải
-                if !query.isEmpty && log.hasOlder { log.loadOlder(all: true) }
-            }
+        Group {
             if log.unreadable && log.events.isEmpty {
                 EmptyState(icon: "doc.questionmark", title: "Không đọc được log",
                            message: Telegram.daemonInstalled ? "Chưa có file \(Store.daemonLogPath)."
                                : "Chưa cài macsentryd. Cài bằng lệnh: sudo ~/MacSentry/daemon/install.sh")
+                    .safeAreaBar(edge: .bottom) { statusBar(nil) }
             } else {
-                VSplitView {
-                    table.frame(minHeight: 180)
-                    detail.frame(minHeight: 90, idealHeight: 170)
+                let data = rows
+                // Thanh trạng thái xếp hẳn bên dưới: VSplitView (NSSplitView) không né safeAreaBar
+                // nên khung chi tiết sẽ chạy xuống dưới thanh và bị chữ đè lên
+                VStack(spacing: 0) {
+                    VSplitView {
+                        table(data).frame(minHeight: 160)
+                        detail.frame(minHeight: 140, idealHeight: 220)
+                    }
+                    Divider()
+                    statusBar(data.count)
                 }
             }
-            statusBar
+        }
+        .topBar { filterBar }
+        .task(id: ui.queries[.events] ?? "") {
+            try? await Task.sleep(nanoseconds: 200_000_000)
+            ui.settled[.events] = ui.queries[.events] ?? ""
+            // Tìm kiếm phải thấy cả phần log cũ chưa tải
+            if !query.isEmpty && log.hasOlder { log.loadOlder(all: true) }
         }
     }
 
@@ -81,28 +103,34 @@ struct EventsPage: View {
         }
     }
 
-    var table: some View {
-        let data = rows
+    func table(_ data: [LogEvent]) -> some View {
         let lastID = data.last?.id
-        return Table(data, selection: $ui.selectedEvent) {
-            TableColumn("") { e in LevelIcon(level: e.level) }.width(18)
+        return Table(data, selection: $ui.selectedEvent, columnCustomization: $ui.eventColumns) {
+            TableColumn("Mức") { e in LevelIcon(level: e.level).help(e.level.title) }
+                .width(30)
+                .customizationID("level")
             TableColumn("Thời gian") { e in
                 Text(e.time).monospacedDigit().foregroundStyle(.secondary)
                     // Cuộn tới dòng cuối → đọc thêm phần log cũ hơn (bảng chỉ dựng các dòng đang hiển thị)
                     .onAppear { if e.id == lastID && log.hasOlder { log.loadOlder() } }
-            }.width(min: 130, ideal: 140, max: 160)
+            }
+            .width(min: 150, ideal: 158, max: 200)
+            .customizationID("time")
+            // Cột cuối: không đặt độ rộng → tự lấp phần còn lại; không cho kéo mép phải / ẩn
             TableColumn("Nội dung") { e in
                 Text(e.text).lineLimit(1).help(e.text)
                     .fontWeight(e.level == .alert ? .medium : .regular)
             }
+            .customizationID("text")
+            .disabledCustomizationBehavior([.resize, .visibility])
         }
-        .tableStyle(.inset(alternatesRowBackgrounds: true))
+        .tableStyle(.bordered(alternatesRowBackgrounds: true))
         .contextMenu(forSelectionType: UInt64.self) { ids in
-            if let e = ids.first.flatMap({ id in log.events.first { $0.id == id } }) {
-                Button("Sao chép dòng") { ui.copy(e.line) }
-                Button("Sao chép nội dung") { ui.copy(e.text) }
+            if let e = ids.first.flatMap(event) {
+                Button("Sao chép dòng", systemImage: "doc.on.doc") { ui.copy(e.line) }
+                Button("Sao chép nội dung", systemImage: "text.quote") { ui.copy(e.text) }
                 Divider()
-                Button("Lọc sự kiện cùng loại") {
+                Button("Lọc sự kiện cùng loại", systemImage: "line.3.horizontal.decrease") {
                     ui.queries[.events] = String(e.text.prefix { $0 != ":" && $0 != "(" }.prefix(40)).trimmingCharacters(in: .whitespaces)
                 }
             }
@@ -118,6 +146,7 @@ struct EventsPage: View {
 
     @ViewBuilder var detail: some View {
         if let e = selected {
+            let d = Self.details(e.text)
             VStack(alignment: .leading, spacing: 0) {
                 HStack(spacing: 8) {
                     LevelIcon(level: e.level)
@@ -125,15 +154,35 @@ struct EventsPage: View {
                     Text(e.time).monospacedDigit().foregroundStyle(.secondary)
                     Spacer()
                     Button { ui.copy(e.line) } label: { Label("Sao chép", systemImage: "doc.on.doc") }
+                        .help("Sao chép cả dòng log (⌘C)")
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 Divider()
                 ScrollView {
-                    Text(Self.pretty(e.text))
-                        .textSelection(.enabled)
-                        .lineSpacing(3)
-                        .frame(maxWidth: .infinity, alignment: .leading)
-                        .padding(14)
+                    VStack(alignment: .leading, spacing: 12) {
+                        Text(d.headline)
+                            .font(.body.weight(.medium))
+                            .textSelection(.enabled)
+                            .fixedSize(horizontal: false, vertical: true)
+                        if !d.fields.isEmpty {
+                            Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
+                                ForEach(Array(d.fields.enumerated()), id: \.offset) { _, f in
+                                    GridRow {
+                                        Text(f.key)
+                                            .foregroundStyle(.secondary)
+                                            .gridColumnAlignment(.trailing)
+                                        Text(f.value)
+                                            .font(f.value.hasPrefix("/") || f.value.hasPrefix("file:") ? .body.monospaced() : .body)
+                                            .textSelection(.enabled)
+                                            .fixedSize(horizontal: false, vertical: true)
+                                            .frame(maxWidth: .infinity, alignment: .leading)
+                                    }
+                                }
+                            }
+                        }
+                    }
+                    .frame(maxWidth: .infinity, alignment: .leading)
+                    .padding(14)
                 }
             }
             .background(Color(nsColor: .textBackgroundColor))
@@ -145,10 +194,9 @@ struct EventsPage: View {
         }
     }
 
-    var statusBar: some View {
+    func statusBar(_ shown: Int?) -> some View {
         StatusBar {
-            let data = rows
-            Text(filtering ? "\(data.count) / \(log.events.count) sự kiện" : "\(log.events.count) sự kiện")
+            Text(filtering ? "\(shown ?? 0) / \(log.events.count) sự kiện" : "\(log.events.count) sự kiện")
             if log.hasOlder {
                 Text("· đã đọc \(ByteCountFormatter.string(fromByteCount: Int64(log.fileSize - log.loadedFrom), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(log.fileSize), countStyle: .file))")
                 Button("Tải thêm cũ hơn") { log.loadOlder() }.buttonStyle(.link)
@@ -164,4 +212,48 @@ struct EventsPage: View {
     static func pretty(_ s: String) -> String {
         fieldRegex.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "\n")
     }
+
+    /// Dòng log → dòng chính + các trường (tên, giá trị). Daemon ghi theo 2 kiểu:
+    /// "… User: a Lệnh: b" (tách bằng fieldRegex) và "… — chạy /đường/dẫn — cài bởi /x (pid …)"
+    static func details(_ text: String) -> (headline: String, fields: [(key: String, value: String)]) {
+        var lines = pretty(text).components(separatedBy: "\n")
+        var head = lines.removeFirst()
+        var fields: [(key: String, value: String)] = []
+        // Các đoạn "— <tên> /giá trị" sau dòng chính
+        let parts = head.components(separatedBy: " — ")
+        head = parts[0]
+        for p in parts.dropFirst() {
+            if let r = p.range(of: " /") {
+                fields.append((String(p[..<r.lowerBound]).capitalizedFirst, String(p[p.index(after: r.lowerBound)...])))
+            } else {
+                head += " — " + p
+            }
+        }
+        // "…): /đường/dẫn" ở cuối dòng chính
+        if let r = head.range(of: ": /", options: .backwards) {
+            fields.insert(("Đường dẫn", String(head[head.index(r.lowerBound, offsetBy: 2)...])), at: 0)
+            head = String(head[..<r.lowerBound])
+        }
+        for l in lines {
+            if let c = l.range(of: ": ") {
+                fields.append((String(l[..<c.lowerBound]), String(l[c.upperBound...]).trimmingCharacters(in: .whitespaces)))
+            } else if !l.isEmpty {
+                fields.append(("", l))
+            }
+        }
+        return (head, fields)
+    }
+}
+
+struct EventsKey: Equatable {
+    let events: [LogEvent]
+    let query: String
+    let level: LogEvent.Level?
+    let range: TimeRange
+    let minute: Int
+}
+
+extension String {
+    /// Viết hoa chữ cái đầu ("cài bởi" → "Cài bởi")
+    var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
 }
