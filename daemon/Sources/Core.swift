@@ -51,17 +51,19 @@ let hostName = (SCDynamicStoreCopyComputerName(nil, nil) as String?) ?? ProcessI
 let timeFmt: DateFormatter = { let f = DateFormatter(); f.dateFormat = "dd/MM/yyyy HH:mm:ss"; return f }()
 func nowStr() -> String { timeFmt.string(from: Date()) }
 
+/// Log ai cũng đọc được (app hiển thị tab Sự kiện) → che bí mật trước khi ghi (dòng lệnh của tiến trình có thể chứa
+/// mật khẩu). Che trước khi nối dòng: mẫu che tới hết dòng.
 func log(_ s: String) {
-    let line = "\(nowStr()) \(s.replacingOccurrences(of: "\n", with: " "))\n"
+    let line = "\(nowStr()) \(maskSecrets(s).replacingOccurrences(of: "\n", with: " "))\n"
     let fd = open(logPath, O_WRONLY | O_APPEND | O_CREAT, 0o644)
     guard fd >= 0 else { return }
     _ = line.withCString { write(fd, $0, strlen($0)) }
     close(fd)
 }
 
-/// Telegram giới hạn 4096 ký tự (UTF-16) → cắt bớt, ghi chú xem đủ trong log
+/// Telegram giới hạn 4096 ký tự (UTF-16) → cắt bớt, ghi chú xem đủ trong log. Bí mật được che như trong log.
 func tgText(_ t: String) -> String {
-    let s = "🛡 \(hostName)\n\(t)"
+    let s = "🛡 \(hostName)\n\(maskSecrets(t))"
     guard s.utf16.count > 3900 else { return s }
     var n = 0, end = s.startIndex
     for i in s.indices { n += s[i].utf16.count; if n > 3800 { break }; end = s.index(after: i) }
@@ -203,8 +205,10 @@ func copyOf(_ p: String) -> String { sp("files/" + p.replacingOccurrences(of: "/
 /// Che giá trị bí mật trước khi gửi nội dung file ra Telegram (vd "export API_TOKEN=abc" → "export API_TOKEN=***")
 let secretRe = try! NSRegularExpression(pattern: #"((KEY|TOKEN|SECRET|PASS|PASSWORD|PWD|AUTH|CREDENTIAL)[A-Za-z0-9_]*\s*[=:]\s*).*"#,
                                         options: [.caseInsensitive])
+let botTokenRe = try! NSRegularExpression(pattern: #"bot[0-9]{6,}:[A-Za-z0-9_-]{20,}"#)
 func maskSecrets(_ s: String) -> String {
-    secretRe.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "$1***")
+    let t = botTokenRe.stringByReplacingMatches(in: s, range: NSRange(s.startIndex..., in: s), withTemplate: "bot<đã che>")
+    return secretRe.stringByReplacingMatches(in: t, range: NSRange(t.startIndex..., in: t), withTemplate: "$1***")
 }
 
 /// Khác biệt giữa 2 nội dung: "< dòng cũ" / "> dòng mới", tối đa `limit` dòng, mỗi dòng ≤ 200 ký tự, đã che bí mật

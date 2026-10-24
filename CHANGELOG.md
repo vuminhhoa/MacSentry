@@ -37,6 +37,8 @@ First public release.
 
 - The app's data folder is created with mode 0700 and its files, including the Telegram token, are written
   with mode 0600 from the start.
+- The daemon masks Telegram bot tokens and secret values (`TOKEN=`, `PASSWORD:`...) in everything it writes to
+  its world-readable log and sends to Telegram, including process command lines.
 
 [Unreleased]: https://github.com/vuminhhoa/MacSentry/compare/v1.0.0...HEAD
 [1.0.0]: https://github.com/vuminhhoa/MacSentry/releases/tag/v1.0.0
