@@ -24,11 +24,11 @@ extension AppDelegate {
             content.sound = trusted ? nil : .default
             UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: c.id, content: content, trigger: nil))
         } else {
-            // Dự phòng khi chưa cấp quyền thông báo
-            let script = "display notification \"\(body.replacingOccurrences(of: "\n", with: " "))\" with title \"\(title)\" sound name \"Sosumi\""
+            // Dự phòng khi chưa cấp quyền thông báo. Nội dung đi qua argv, không ghép vào mã AppleScript (tránh chèn lệnh)
             let p = Process()
             p.executableURL = URL(fileURLWithPath: "/usr/bin/osascript")
-            p.arguments = ["-e", script]
+            p.arguments = ["-e", "on run argv", "-e", "display notification (item 1 of argv) with title (item 2 of argv) sound name \"Sosumi\"",
+                           "-e", "end run", body.replacingOccurrences(of: "\n", with: " "), title]
             try? p.run()
         }
 
