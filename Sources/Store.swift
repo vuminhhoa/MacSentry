@@ -16,6 +16,11 @@ final class Store {
     static let daemonLogPath = "/var/log/macsentry.log"
     /// Trạng thái kết nối do macsentryd (root) quét và chia sẻ — dòng "conn <cổng> <addr.port>" / "who <user> <tty> (<host>)"
     static let daemonRemotePath = "/var/run/macsentry/remote"
+    /// Lệnh cài / cập nhật daemon: build.sh ghi thư mục mã nguồn vào Info.plist (MacSentrySourceDir)
+    static let daemonInstallCommand: String = {
+        guard let dir = Bundle.main.object(forInfoDictionaryKey: "MacSentrySourceDir") as? String else { return "sudo ./daemon/install.sh" }
+        return "sudo '\(dir.replacingOccurrences(of: "'", with: "'\\''"))/daemon/install.sh'"
+    }()
 
     static func load<T: Decodable>(_ url: URL, as: T.Type) -> T? {
         guard let data = try? Data(contentsOf: url) else { return nil }

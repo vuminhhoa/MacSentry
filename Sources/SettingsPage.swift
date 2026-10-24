@@ -17,7 +17,7 @@ struct SettingsPage: View {
     @ObservedObject var ui: ViewState
     @ObservedObject var form: TelegramForm
 
-    static let installCommand = "sudo ~/MacSentry/daemon/install.sh"
+    static let installCommand = Store.daemonInstallCommand
 
     var dirty: Bool { form.token != (Telegram.config?.botToken ?? "") || form.chatId != (Telegram.config?.chatId ?? "") }
     var valid: Bool { !form.token.trimmingCharacters(in: .whitespaces).isEmpty && !form.chatId.trimmingCharacters(in: .whitespaces).isEmpty }

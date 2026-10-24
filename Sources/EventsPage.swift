@@ -50,7 +50,7 @@ struct EventsPage: View {
             if log.unreadable && log.events.isEmpty {
                 EmptyState(icon: "doc.questionmark", title: "Không đọc được log",
                            message: Telegram.daemonInstalled ? "Chưa có file \(Store.daemonLogPath)."
-                               : "Chưa cài macsentryd. Cài bằng lệnh: sudo ~/MacSentry/daemon/install.sh")
+                               : "Chưa cài macsentryd. Cài bằng lệnh: \(Store.daemonInstallCommand)")
                     .safeAreaBar(edge: .bottom) { statusBar(nil) }
             } else {
                 let data = rows

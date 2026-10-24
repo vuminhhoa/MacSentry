@@ -70,7 +70,7 @@ func checkPosture(_ procs: [Proc], tick: Int) {
     for f in glob(["/Users/*/Library/Application Support/MacSentry/telegram.json"]) {
         let tok = FileManager.default.contents(atPath: f).flatMap { try? JSONSerialization.jsonObject(with: $0) as? [String: Any] }?["botToken"] as? String
         if tok == config.token, throttle("sametoken", 604800) {
-            info("🔑 App và daemon đang dùng CHUNG bot Telegram. Nên tạo bot riêng cho daemon rồi chạy: sudo ~/MacSentry/daemon/install.sh --reconfigure")
+            info("🔑 App và daemon đang dùng CHUNG bot Telegram. Nên tạo bot riêng cho daemon rồi chạy trong thư mục mã nguồn MacSentry: sudo ./daemon/install.sh --reconfigure")
         }
     }
 }
