@@ -140,7 +140,7 @@ if [ -f /var/db/macsentry/es_alive ]; then
   echo "✅ macsentry-es (Endpoint Security) đang chạy"
 else
   cat <<MSG
-⚠️  macsentry-es chưa đọc được sự kiện Endpoint Security: $(cat /var/db/macsentry/es_status 2>/dev/null | tail -1)
+⚠️  macsentry-es chưa đọc được sự kiện Endpoint Security: $(tail -1 /var/db/macsentry/es_status 2>/dev/null)
    Cấp Full Disk Access: Cài đặt → Quyền riêng tư & Bảo mật → Truy cập toàn bộ ổ đĩa → nút + →
    Cmd+Shift+G gõ /usr/local/libexec/macsentry-es → bật công tắc. Helper tự thử lại sau ~30 giây.
    Làm tương tự cho /usr/local/libexec/macsentryd (daemon cần để đọc đủ các vị trí được macOS bảo vệ).

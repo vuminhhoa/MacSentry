@@ -52,7 +52,7 @@ changes by hand:
   Real samples are saved in `/var/db/macsentry/es_samples/` on a machine running the helper, and
   `python3 es/schema.py` prints their structure.
 - **App**: install with `./build.sh` and exercise the pages you changed.
-- **Shell scripts**: run `shellcheck build.sh uninstall.sh daemon/*.sh`.
+- **Shell scripts**: run `shellcheck build.sh uninstall.sh daemon/*.sh` (CI uses ShellCheck 0.11).
 
 CI builds every pull request for Apple silicon and Intel, runs ShellCheck and actionlint, and runs CodeQL.
 

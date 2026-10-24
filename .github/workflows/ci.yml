@@ -50,11 +50,18 @@ jobs:
         with:
           persist-credentials: false
 
+      # Pinned images so CI and local runs use the same linter versions
       - name: ShellCheck
-        run: shellcheck build.sh uninstall.sh daemon/*.sh
+        run: >-
+          docker run --rm -v "$PWD:/mnt" -w /mnt
+          koalaman/shellcheck:v0.11.0@sha256:61862eba1fcf09a484ebcc6feea46f1782532571a34ed51fedf90dd25f925a8d
+          build.sh uninstall.sh daemon/install.sh daemon/uninstall.sh
 
       - name: actionlint
-        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+        run: >-
+          docker run --rm -v "$PWD:/repo" -w /repo
+          rhysd/actionlint:1.7.12@sha256:b1934ee5f1c509618f2508e6eb47ee0d3520686341fec936f3b79331f9315667
+          -color
 
       - name: Python syntax
         run: python3 -m py_compile es/schema.py
