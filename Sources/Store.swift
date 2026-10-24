@@ -6,7 +6,9 @@ final class Store {
     static let dir: URL = {
         let d = FileManager.default.urls(for: .applicationSupportDirectory, in: .userDomainMask)[0]
             .appendingPathComponent("MacSentry", isDirectory: true)
-        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true)
+        // Chỉ chủ tài khoản đọc được: thư mục chứa token Telegram, lịch sử kết nối, IP tin cậy
+        try? FileManager.default.createDirectory(at: d, withIntermediateDirectories: true, attributes: [.posixPermissions: 0o700])
+        try? FileManager.default.setAttributes([.posixPermissions: 0o700], ofItemAtPath: d.path)
         return d
     }()
     static let historyURL = dir.appendingPathComponent("history.json")
@@ -20,8 +22,12 @@ final class Store {
         let dec = JSONDecoder(); dec.dateDecodingStrategy = .iso8601
         return try? dec.decode(T.self, from: data)
     }
+    /// Ghi nguyên tử với quyền 0600 ngay từ lúc tạo (không có khoảnh khắc file chứa token đọc được bởi user khác)
     static func save<T: Encodable>(_ value: T, to url: URL) {
         let enc = JSONEncoder(); enc.dateEncodingStrategy = .iso8601; enc.outputFormatting = .prettyPrinted
-        try? enc.encode(value).write(to: url, options: .atomic)
+        guard let data = try? enc.encode(value) else { return }
+        let tmp = url.appendingPathExtension("tmp")
+        guard FileManager.default.createFile(atPath: tmp.path, contents: data, attributes: [.posixPermissions: 0o600]) else { return }
+        rename(tmp.path, url.path)
     }
 }

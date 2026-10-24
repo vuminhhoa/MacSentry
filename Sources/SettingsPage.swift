@@ -110,7 +110,6 @@ struct SettingsPage: View {
         let cfg = Telegram.Config(botToken: form.token.trimmingCharacters(in: .whitespacesAndNewlines),
                                   chatId: form.chatId.trimmingCharacters(in: .whitespacesAndNewlines))
         Store.save(cfg, to: Telegram.configURL)
-        try? FileManager.default.setAttributes([.posixPermissions: 0o600], ofItemAtPath: Telegram.configURL.path)
         form.token = cfg.botToken; form.chatId = cfg.chatId
         form.testOK = nil
         ui.flash("Đã lưu cấu hình Telegram")
