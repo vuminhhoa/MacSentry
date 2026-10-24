@@ -16,6 +16,10 @@ MacSentry theo dõi máy Mac để phát hiện truy cập từ xa, cài cắm, 
 từng phát hiện về Telegram ngay khi xảy ra. Cảnh báo rời khỏi máy trước khi ai đó kịp xoá dấu vết. Công cụ dành cho
 người tự lo máy Mac của mình (hoặc vài máy) và muốn biết khi có gì thay đổi mà không cần dựng cả một hệ thống EDR.
 
+<p align="center">
+  <img src="docs/images/overview.png" alt="Trang tổng quan của MacSentry: mọi thành phần giám sát đều đang chạy" width="820">
+</p>
+
 ## Điểm chính
 
 - **Truy cập từ xa**: SSH, Screen Sharing/VNC, Remote Desktop, SMB, AFP, Remote Apple Events. IP lạ có popup, kèm
@@ -38,6 +42,16 @@ Danh sách đầy đủ (tiếng Anh): [docs/detections.md](docs/detections.md).
 
 > [!NOTE]
 > Giao diện app và nội dung cảnh báo hiện bằng tiếng Việt.
+
+## Ảnh chụp
+
+| Sự kiện | Lịch sử kết nối |
+|---|---|
+| ![Trình xem sự kiện kiểu Console với các mức cảnh báo, chú ý, thông tin](docs/images/events.png) | ![Các phiên truy cập từ xa kèm dịch vụ, user và thời lượng](docs/images/history.png) |
+| **IP tin cậy** | **Cài đặt** |
+| ![IP tin cậy và IP đã từng kết nối nhưng chưa tin cậy](docs/images/trusted.png) | ![Telegram, thành phần giám sát và quyền macOS](docs/images/settings.png) |
+
+<sub>Ảnh chụp dùng dữ liệu mẫu và dải IP dành cho tài liệu.</sub>
 
 ## Thành phần
 

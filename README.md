@@ -23,6 +23,10 @@ changes without running a full EDR stack.
 > The app interface and alert messages are currently in Vietnamese. English localization is planned, and
 > help with it is welcome (see [Contributing](CONTRIBUTING.md)).
 
+<p align="center">
+  <img src="docs/images/overview.png" alt="MacSentry overview: every monitoring component running" width="820">
+</p>
+
 ## Highlights
 
 - **Remote access**: SSH, Screen Sharing/VNC, Remote Desktop, SMB, AFP and Remote Apple Events sessions, with
@@ -47,6 +51,16 @@ changes without running a full EDR stack.
   roughly 1-3% of one core in total, running at background priority. See [Performance](#performance).
 
 See [docs/detections.md](docs/detections.md) for the full list.
+
+## Screenshots
+
+| Events | Connection history |
+|---|---|
+| ![Console-style event viewer with alert, notice and info levels](docs/images/events.png) | ![Remote access sessions with service, user and duration](docs/images/history.png) |
+| **Trusted IPs** | **Settings** |
+| ![Trusted IPs and IPs seen but not yet trusted](docs/images/trusted.png) | ![Telegram, monitoring components and macOS permissions](docs/images/settings.png) |
+
+<sub>Screenshots use sample data and documentation IP ranges.</sub>
 
 ## How it works
 
