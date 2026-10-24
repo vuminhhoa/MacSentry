@@ -1,6 +1,6 @@
 #!/bin/bash
 # Cài macsentryd (LaunchDaemon chạy bằng root) + helper Endpoint Security macsentry-es.
-# Chạy: ./build.sh rồi sudo ~/MacSentry/daemon/install.sh
+# Chạy: ./build.sh rồi sudo ./daemon/install.sh
 #   --reconfigure  nhập lại bot Telegram riêng cho daemon và URL heartbeat (mặc định giữ /etc/macsentry.conf cũ)
 set -euo pipefail
 [ "$(id -u)" = 0 ] || { echo "Cần quyền root: sudo $0"; exit 1; }
@@ -9,11 +9,14 @@ LABEL=io.github.vuminhhoa.macsentry.daemon
 ES_LABEL=io.github.vuminhhoa.macsentry.es
 ES_BIN=../build/macsentry-es
 DAEMON_BIN=../build/macsentryd
-SRC_CONF="$(eval echo ~"${SUDO_USER:-$USER}")/Library/Application Support/MacSentry/telegram.json"
+TARGET_USER=${SUDO_USER:-$USER}
+TARGET_HOME=$(dscl . -read "/Users/$TARGET_USER" NFSHomeDirectory 2>/dev/null | awk '{print $2}')
+SRC_CONF="${TARGET_HOME:-/var/root}/Library/Application Support/MacSentry/telegram.json"
 for b in "$ES_BIN" "$DAEMON_BIN"; do [ -x "$b" ] || { echo "Chưa có $b — chạy ./build.sh trước (không cần sudo)"; exit 1; }; done
 
 # ---- cấu hình: giữ file cũ (có thể đã có HEARTBEAT_URL, token riêng) trừ khi --reconfigure
 if [ ! -f /etc/macsentry.conf ] || [ "${1:-}" = --reconfigure ]; then
+  [ -f "$SRC_CONF" ] || { echo "Chưa có $SRC_CONF — mở MacSentry.app → Cài đặt để nhập bot Telegram trước"; exit 1; }
   APP_TOKEN=$(plutil -extract botToken raw -o - "$SRC_CONF")
   CHAT=$(plutil -extract chatId raw -o - "$SRC_CONF")
   echo "Bot Telegram RIÊNG cho daemon (khuyên dùng: tạo bot mới với @BotFather, rồi /start bot đó trong chat của bạn)."
@@ -58,8 +61,8 @@ if [ ! -e /etc/macsentry.allow ]; then
   cat > /etc/macsentry.allow <<'ALLOW'
 # Lệnh khớp một dòng (regex, không phân biệt hoa thường) sẽ chỉ được ghi log, không cảnh báo.
 # Chuỗi được so: "<lệnh đầy đủ> || <chuỗi tiến trình cha>". Sửa: sudo nano /etc/macsentry.allow (tự đọc lại sau ~1 phút)
-# Claude Code đọc token đăng nhập của chính nó trong Keychain
-(^|/)security find-generic-password .*-s Claude Code-credentials\b.*\|\| claude\(
+# Ví dụ — Claude Code đọc token đăng nhập của chính nó trong Keychain (bỏ dấu # ở dòng dưới để bật):
+# (^|/)security find-generic-password .*-s Claude Code-credentials\b.*\|\| claude\(
 ALLOW
   chown root:wheel /etc/macsentry.allow; chmod 644 /etc/macsentry.allow
 fi
@@ -97,13 +100,23 @@ write_plist() { # $1 = label, $2.. = ProgramArguments
 PLIST
   chown root:wheel "/Library/LaunchDaemons/$label.plist"; chmod 644 "/Library/LaunchDaemons/$label.plist"
 }
+# Bản cũ dùng label khác: gỡ job của chúng để không chạy song song hai daemon
+for old in /Library/LaunchDaemons/*.macsentry.daemon.plist /Library/LaunchDaemons/*.macsentry.es.plist; do
+  [ -e "$old" ] || continue
+  old_label=$(basename "$old" .plist)
+  if [ "$old_label" = "$LABEL" ] || [ "$old_label" = "$ES_LABEL" ]; then continue; fi
+  touch /var/db/macsentry/updating /var/db/macsentry/clean_stop
+  launchctl bootout "system/$old_label" 2>/dev/null || true
+  rm -f "$old"
+done
+
 write_plist $LABEL /usr/local/libexec/macsentryd
 write_plist $ES_LABEL /usr/local/libexec/macsentry-es
 
 restart() { # $1 = label
   launchctl bootout "system/$1" 2>/dev/null || true
-  for i in $(seq 1 20); do launchctl print "system/$1" >/dev/null 2>&1 || break; sleep 1; done
-  for i in 1 2 3 4 5; do
+  for _ in $(seq 1 20); do launchctl print "system/$1" >/dev/null 2>&1 || break; sleep 1; done
+  for _ in 1 2 3 4 5; do
     launchctl bootstrap system "/Library/LaunchDaemons/$1.plist" 2>/dev/null && return 0
     sleep 2
   done
@@ -118,7 +131,7 @@ restart $ES_LABEL
 restart $LABEL
 rm -f /var/db/macsentry/updating
 
-for i in 1 2 3 4 5; do
+for _ in 1 2 3 4 5; do
   launchctl print system/$LABEL 2>/dev/null | grep -q "state = running" && { echo "✅ macsentryd đang chạy. Log: /var/log/macsentry.log"; break; }
   sleep 1
 done
