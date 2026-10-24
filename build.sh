@@ -1,54 +1,97 @@
 #!/bin/bash
-# Build MacSentry.app và cài vào ~/Applications
+# Build MacSentry.app, macsentryd và macsentry-es; mặc định cài app vào ~/Applications và chạy.
+#   ./build.sh               build + cài app (daemon cài riêng: sudo ./daemon/install.sh)
+#   ./build.sh --no-install  chỉ build vào build/ (dùng cho CI)
+# Biến môi trường:
+#   ARCHS="arm64 x86_64"   kiến trúc cần build (mặc định: kiến trúc của máy đang build)
+#   SIGN_ID="..."          danh tính ký mã (mặc định: chứng chỉ "Apple Development" đầu tiên, không có thì ký ad-hoc)
 set -euo pipefail
 cd "$(dirname "$0")"
+
+INSTALL=1
+for arg in "$@"; do
+  case $arg in
+    --no-install) INSTALL=0 ;;
+    -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    *) echo "Tham số không hợp lệ: $arg" >&2; exit 2 ;;
+  esac
+done
+
+BUNDLE_ID=io.github.vuminhhoa.macsentry
+VERSION=$(tr -d '[:space:]' < VERSION)
+BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
+MACOS_MIN=26.0
+read -r -a ARCH_LIST <<< "${ARCHS:-$(uname -m)}"
 APP="build/MacSentry.app"
-rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources"
+rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/obj
 
-swiftc -O -o "$APP/Contents/MacOS/MacSentry" Sources/*.swift \
-  -framework AppKit -framework SwiftUI -framework UserNotifications -framework CoreAudio -framework CoreMediaIO 2>&1 | grep -v "^$" || true
-test -x "$APP/Contents/MacOS/MacSentry"
+# compile <output> <swiftc args...>: build từng kiến trúc rồi gộp bằng lipo
+compile() {
+  local out=$1; shift
+  local parts=()
+  for arch in "${ARCH_LIST[@]}"; do
+    swiftc -O -target "$arch-apple-macos$MACOS_MIN" -o "build/obj/$(basename "$out")-$arch" "$@"
+    parts+=("build/obj/$(basename "$out")-$arch")
+  done
+  lipo -create -output "$out" "${parts[@]}"
+}
 
-# Logo: app tự vẽ ra các cỡ PNG → đóng thành AppIcon.icns (Finder, System Settings, Dock đọc icon từ file này)
-"$APP/Contents/MacOS/MacSentry" --render-icon build/AppIcon.iconset
+compile "$APP/Contents/MacOS/MacSentry" Sources/*.swift \
+  -framework AppKit -framework SwiftUI -framework UserNotifications -framework CoreAudio -framework CoreMediaIO
+compile build/macsentryd daemon/Sources/*.swift shared/*.swift
+compile build/macsentry-es es/*.swift shared/*.swift
+
+# Logo: app tự vẽ ra các cỡ PNG → đóng thành AppIcon.icns (Finder, System Settings, Dock đọc icon từ file này).
+# Dùng bản đúng kiến trúc của máy đang build để chạy được cả khi build chéo.
+ICON_RENDERER="$APP/Contents/MacOS/MacSentry"
+[ -x "build/obj/MacSentry-$(uname -m)" ] && ICON_RENDERER="build/obj/MacSentry-$(uname -m)"
+"$ICON_RENDERER" --render-icon build/AppIcon.iconset
 iconutil -c icns build/AppIcon.iconset -o "$APP/Contents/Resources/AppIcon.icns"
 
 cat > "$APP/Contents/Info.plist" <<PLIST
 <?xml version="1.0" encoding="UTF-8"?>
 <!DOCTYPE plist PUBLIC "-//Apple//DTD PLIST 1.0//EN" "http://www.apple.com/DTDs/PropertyList-1.0.dtd">
 <plist version="1.0"><dict>
-  <key>CFBundleIdentifier</key><string>io.github.vuminhhoa.macsentry</string>
+  <key>CFBundleIdentifier</key><string>$BUNDLE_ID</string>
   <key>CFBundleName</key><string>MacSentry</string>
   <key>CFBundleDisplayName</key><string>MacSentry</string>
   <key>CFBundleExecutable</key><string>MacSentry</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
   <key>CFBundlePackageType</key><string>APPL</string>
-  <key>CFBundleShortVersionString</key><string>1.0</string>
-  <key>CFBundleVersion</key><string>1</string>
-  <key>LSMinimumSystemVersion</key><string>13.0</string>
+  <key>CFBundleShortVersionString</key><string>$VERSION</string>
+  <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>
+  <key>LSMinimumSystemVersion</key><string>$MACOS_MIN</string>
   <key>LSUIElement</key><true/>
   <key>NSHighResolutionCapable</key><true/>
+  <key>MacSentrySourceDir</key><string>$(pwd | sed 's/&/\&amp;/g; s/</\&lt;/g')</string>
+  <key>NSHumanReadableCopyright</key><string>Copyright © 2026 Vũ Minh Hoà. MIT License.</string>
 </dict></plist>
 PLIST
 
-# Ký bằng chứng chỉ Apple Development (nếu có) để macOS giữ quyền "Mạng cục bộ" qua các lần build.
-# Ký ad-hoc (-) thì mỗi lần build là một danh tính mới → quyền cũ không còn áp dụng, netstat bị ẩn socket.
-SIGN_ID=$(security find-identity -v -p codesigning | awk -F'"' '/Apple Development/ {print $2; exit}')
-codesign --force --deep -s "${SIGN_ID:--}" "$APP"
-
-# Daemon root macsentryd và helper Endpoint Security (cài bằng: sudo ./daemon/install.sh). Ký cùng chứng chỉ để quyền
-# Full Disk Access đã cấp cho helper vẫn còn hiệu lực sau mỗi lần build lại.
-swiftc -O -o build/macsentryd daemon/Sources/*.swift shared/*.swift 2>&1 | grep -v "^$" || true
-test -x build/macsentryd
-codesign --force -s "${SIGN_ID:--}" --identifier io.github.vuminhhoa.macsentry.daemon build/macsentryd
-swiftc -O -o build/macsentry-es es/*.swift shared/*.swift 2>&1 | grep -v "^$" || true
-test -x build/macsentry-es
-codesign --force -s "${SIGN_ID:--}" --identifier io.github.vuminhhoa.macsentry.es build/macsentry-es
+# Ký bằng chứng chỉ Apple Development (nếu có) để macOS giữ quyền "Mạng cục bộ" và Full Disk Access qua các lần
+# build. Ký ad-hoc (-) thì mỗi lần build là một danh tính mới → quyền cũ không còn áp dụng, netstat bị ẩn socket.
+SIGN_ID=${SIGN_ID:-$(security find-identity -v -p codesigning 2>/dev/null | awk -F'"' '/Apple Development/ {print $2; exit}')}
+codesign --force -s "${SIGN_ID:--}" "$APP"
+codesign --force -s "${SIGN_ID:--}" --identifier "$BUNDLE_ID.daemon" build/macsentryd
+codesign --force -s "${SIGN_ID:--}" --identifier "$BUNDLE_ID.es" build/macsentry-es
+rm -rf build/obj build/AppIcon.iconset
+echo "Đã build MacSentry $VERSION ($BUILD_NUMBER) cho ${ARCH_LIST[*]} → build/"
+[ "$INSTALL" = 1 ] || exit 0
 
 DEST="$HOME/Applications/MacSentry.app"
 mkdir -p "$HOME/Applications"
 # Gỡ job launchd trước khi thay app (job có KeepAlive, kill thường sẽ bị chạy lại ngay)
-launchctl bootout "gui/$(id -u)/io.github.vuminhhoa.macsentry" 2>/dev/null || true
+launchctl bootout "gui/$(id -u)/$BUNDLE_ID" 2>/dev/null || true
+# Bản cũ dùng label khác: gỡ LaunchAgent và job netstat của chúng để không chạy song song hai bản
+for plist in "$HOME"/Library/LaunchAgents/*.macsentry.plist; do
+  [ -e "$plist" ] || continue
+  label=$(basename "$plist" .plist)
+  [ "$label" = "$BUNDLE_ID" ] && continue
+  launchctl bootout "gui/$(id -u)/$label" 2>/dev/null || true
+  rm -f "$plist"
+done
+launchctl list | awk -v keep="$BUNDLE_ID.netstat" '$3 ~ /\.macsentry\.netstat$/ && $3 != keep {print $3}' |
+  while read -r label; do launchctl remove "$label" 2>/dev/null || true; done
 pkill -x MacSentry || true
 rm -rf "$DEST" && cp -R "$APP" "$DEST"
 # Báo LaunchServices đọc lại bundle (icon mới hiện trong Finder / System Settings)
