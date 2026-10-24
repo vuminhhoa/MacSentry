@@ -1,2 +1,18 @@
+# Build output
 build/
+.build/
+*.xcodeproj/xcuserdata/
+DerivedData/
+
+# Local test data for DRYRUN runs (see CONTRIBUTING.md)
+/state/
+/pub/
+/test.conf
+/test.log
+*.jsonl
+
+# Python
+__pycache__/
+
+# macOS
 .DS_Store
