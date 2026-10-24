@@ -1,0 +1,49 @@
+name: Bug report
+description: Something crashes, fails to install, or behaves wrongly.
+labels: [bug]
+body:
+  - type: markdown
+    attributes:
+      value: |
+        Thanks for the report. Logs and alerts can contain host names, user names, IPs and command lines:
+        please remove anything private, and never paste your bot token or chat ID.
+        Security vulnerabilities go through [private reporting](https://github.com/vuminhhoa/MacSentry/security/advisories/new) instead.
+  - type: dropdown
+    id: component
+    attributes:
+      label: Component
+      options:
+        - MacSentry.app (menu bar app)
+        - macsentryd (daemon)
+        - macsentry-es (Endpoint Security helper)
+        - build.sh / install / uninstall scripts
+        - Not sure
+    validations:
+      required: true
+  - type: textarea
+    id: what-happened
+    attributes:
+      label: What happened?
+      description: What you expected, what happened instead, and how to reproduce it.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MacSentry version or commit
+      placeholder: 1.0.0 or the output of `git rev-parse --short HEAD`
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version and Mac
+      placeholder: macOS 26.1, MacBook Air M3
+    validations:
+      required: true
+  - type: textarea
+    id: logs
+    attributes:
+      label: Relevant log lines
+      description: From `/var/log/macsentry.log`, `/var/db/macsentry/es_status`, or Console. Redact private data.
+      render: text

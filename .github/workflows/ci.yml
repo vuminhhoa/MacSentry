@@ -1,0 +1,60 @@
+name: CI
+
+on:
+  push:
+    branches: [main]
+  pull_request:
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: ${{ github.workflow }}-${{ github.ref }}
+  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+
+jobs:
+  build:
+    name: Build (universal)
+    runs-on: macos-26
+    timeout-minutes: 30
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          fetch-depth: 0 # build.sh numbers builds by commit count
+          persist-credentials: false
+
+      - name: Toolchain
+        run: |
+          xcodebuild -version
+          swift --version
+
+      - name: Build app, daemon and helper
+        run: ARCHS="arm64 x86_64" SIGN_ID=- ./build.sh --no-install
+
+      - name: Check outputs
+        run: |
+          for bin in build/MacSentry.app/Contents/MacOS/MacSentry build/macsentryd build/macsentry-es; do
+            lipo "$bin" -verify_arch arm64 x86_64
+            codesign --verify --strict "$bin"
+          done
+          plutil -lint build/MacSentry.app/Contents/Info.plist
+          test -s build/MacSentry.app/Contents/Resources/AppIcon.icns
+
+  lint:
+    name: Lint scripts and workflows
+    runs-on: ubuntu-24.04
+    timeout-minutes: 10
+    steps:
+      - uses: actions/checkout@3d3c42e5aac5ba805825da76410c181273ba90b1 # v7.0.1
+        with:
+          persist-credentials: false
+
+      - name: ShellCheck
+        run: shellcheck build.sh uninstall.sh daemon/*.sh
+
+      - name: actionlint
+        run: docker run --rm -v "$PWD:/repo" -w /repo rhysd/actionlint:1.7.12 -color
+
+      - name: Python syntax
+        run: python3 -m py_compile es/schema.py

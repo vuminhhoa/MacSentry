@@ -1,0 +1,21 @@
+name: Detection request
+description: Suggest an event or technique MacSentry should report.
+labels: [detection]
+body:
+  - type: textarea
+    id: technique
+    attributes:
+      label: What should be detected?
+      description: The technique or event, and why it matters. A MITRE ATT&CK ID or a write-up link helps.
+    validations:
+      required: true
+  - type: textarea
+    id: signal
+    attributes:
+      label: Observable signal
+      description: Where it shows up on macOS, if you know (Endpoint Security event, file, plist, log message...).
+  - type: textarea
+    id: noise
+    attributes:
+      label: Expected noise
+      description: Legitimate software that does the same thing and could cause false positives.

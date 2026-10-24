@@ -1,0 +1,34 @@
+name: False positive
+description: An alert fired for normal, legitimate activity.
+labels: [false positive]
+body:
+  - type: markdown
+    attributes:
+      value: Please remove host names, user names, IPs and anything else private from the alert text.
+  - type: textarea
+    id: alert
+    attributes:
+      label: Alert text
+      description: The Telegram message or log line, redacted.
+      render: text
+    validations:
+      required: true
+  - type: textarea
+    id: activity
+    attributes:
+      label: What was actually happening?
+      description: The app, tool or action that caused it, and how often it fires.
+    validations:
+      required: true
+  - type: input
+    id: version
+    attributes:
+      label: MacSentry version or commit
+    validations:
+      required: true
+  - type: input
+    id: macos
+    attributes:
+      label: macOS version
+    validations:
+      required: true
