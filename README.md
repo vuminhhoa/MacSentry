@@ -209,6 +209,14 @@ Inspect what the daemon's readers see, without sending anything: `sudo /usr/loca
 
 The source layout and how to add a new check are described in [docs/architecture.md](docs/architecture.md).
 
+## Further reading
+
+Write-ups on how MacSentry is built and why, on [vuminhhoa.com](https://vuminhhoa.com/en/projects/macsentry):
+
+- [Making a Mac security monitor hard to silence](https://vuminhhoa.com/en/blog/tamper-resistant-mac-security-monitor)
+- [From a polling Bash script to an event-driven Swift daemon on macOS](https://vuminhhoa.com/en/blog/macos-daemon-bash-to-swift-event-driven)
+- [Endpoint Security on macOS without the entitlement: eslogger and Swift](https://vuminhhoa.com/en/blog/endpoint-security-eslogger-swift)
+
 ## Contributing
 
 Bug reports, false positive reports, new detections and translations are welcome. Please read

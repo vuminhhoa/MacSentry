@@ -138,6 +138,14 @@ STATE=./state build/macsentry-es --replay < su-kien.jsonl                       
 sudo /usr/local/libexec/macsentryd --check      # xem dữ liệu các bộ đọc của daemon, không gửi gì
 ```
 
+## Đọc thêm
+
+Các bài viết về cách MacSentry được xây dựng và lý do, trên [vuminhhoa.com](https://vuminhhoa.com/vi/projects/macsentry):
+
+- [Làm một công cụ giám sát máy Mac khó bị tắt lén](https://vuminhhoa.com/vi/blog/tamper-resistant-mac-security-monitor)
+- [Từ script Bash quét liên tục sang daemon Swift chạy theo sự kiện trên macOS](https://vuminhhoa.com/vi/blog/macos-daemon-bash-to-swift-event-driven)
+- [Endpoint Security trên macOS không cần entitlement: eslogger và Swift](https://vuminhhoa.com/vi/blog/endpoint-security-eslogger-swift)
+
 ## Đóng góp
 
 Rất hoan nghênh báo lỗi, báo cảnh báo giả, đề xuất phát hiện mới và bản dịch. Đọc [CONTRIBUTING.md](CONTRIBUTING.md)
