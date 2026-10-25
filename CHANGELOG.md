@@ -40,5 +40,5 @@ First public release.
 - The daemon masks Telegram bot tokens and secret values (`TOKEN=`, `PASSWORD:`...) in everything it writes to
   its world-readable log and sends to Telegram, including process command lines.
 
-[Unreleased]: https://github.com/vuminhhoa/MacSentry/compare/v1.0.0...HEAD
-[1.0.0]: https://github.com/vuminhhoa/MacSentry/releases/tag/v1.0.0
+[Unreleased]: https://github.com/vuminhhoa/macsentry/compare/v1.0.0...HEAD
+[1.0.0]: https://github.com/vuminhhoa/macsentry/releases/tag/v1.0.0

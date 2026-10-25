@@ -11,7 +11,7 @@ Only the latest release and the `main` branch receive security fixes.
 **Please do not open a public issue, discussion or pull request for a vulnerability.**
 
 Report it privately through GitHub:
-[**Report a vulnerability**](https://github.com/vuminhhoa/MacSentry/security/advisories/new)
+[**Report a vulnerability**](https://github.com/vuminhhoa/macsentry/security/advisories/new)
 (Security tab → Advisories → Report a vulnerability).
 
 A useful report includes:

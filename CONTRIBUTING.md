@@ -8,7 +8,7 @@ through [SECURITY.md](SECURITY.md), never through public issues.
 
 ## Reporting issues
 
-Use the [issue forms](https://github.com/vuminhhoa/MacSentry/issues/new/choose):
+Use the [issue forms](https://github.com/vuminhhoa/macsentry/issues/new/choose):
 
 - **Bug report**: something crashes, does not install, or behaves wrongly.
 - **False positive**: an alert that fired for normal activity. Include the alert text and what you were doing.
@@ -22,7 +22,7 @@ publish, and never post your bot token or chat ID.
 You need macOS 26 or later and Xcode 26 or later (Swift 6). There are no third-party dependencies.
 
 ```sh
-git clone https://github.com/vuminhhoa/MacSentry.git
+git clone https://github.com/vuminhhoa/macsentry.git
 cd MacSentry
 ./build.sh --no-install        # build app, daemon and helper into build/
 ```

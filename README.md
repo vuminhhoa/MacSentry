@@ -4,8 +4,8 @@
 
 **Security alerts for your Mac, delivered to Telegram.**
 
-[![CI](https://github.com/vuminhhoa/MacSentry/actions/workflows/ci.yml/badge.svg)](https://github.com/vuminhhoa/MacSentry/actions/workflows/ci.yml)
-[![CodeQL](https://github.com/vuminhhoa/MacSentry/actions/workflows/codeql.yml/badge.svg)](https://github.com/vuminhhoa/MacSentry/actions/workflows/codeql.yml)
+[![CI](https://github.com/vuminhhoa/macsentry/actions/workflows/ci.yml/badge.svg)](https://github.com/vuminhhoa/macsentry/actions/workflows/ci.yml)
+[![CodeQL](https://github.com/vuminhhoa/macsentry/actions/workflows/codeql.yml/badge.svg)](https://github.com/vuminhhoa/macsentry/actions/workflows/codeql.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple)
 ![Swift 6](https://img.shields.io/badge/Swift-6-F05138?logo=swift&logoColor=white)
@@ -94,7 +94,7 @@ More detail is in [docs/architecture.md](docs/architecture.md).
 MacSentry is built from source.
 
 ```sh
-git clone https://github.com/vuminhhoa/MacSentry.git
+git clone https://github.com/vuminhhoa/macsentry.git
 cd MacSentry
 ./build.sh                    # builds and installs ~/Applications/MacSentry.app, then starts it
 ```

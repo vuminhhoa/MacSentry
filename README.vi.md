@@ -4,7 +4,7 @@
 
 **Cảnh báo an ninh cho máy Mac, gửi về Telegram.**
 
-[![CI](https://github.com/vuminhhoa/MacSentry/actions/workflows/ci.yml/badge.svg)](https://github.com/vuminhhoa/MacSentry/actions/workflows/ci.yml)
+[![CI](https://github.com/vuminhhoa/macsentry/actions/workflows/ci.yml/badge.svg)](https://github.com/vuminhhoa/macsentry/actions/workflows/ci.yml)
 [![License: MIT](https://img.shields.io/badge/license-MIT-blue.svg)](LICENSE)
 ![macOS 26+](https://img.shields.io/badge/macOS-26%2B-black?logo=apple)
 
@@ -72,7 +72,7 @@ Chi tiết thiết kế: [docs/architecture.md](docs/architecture.md).
 ## Cài đặt
 
 ```sh
-git clone https://github.com/vuminhhoa/MacSentry.git
+git clone https://github.com/vuminhhoa/macsentry.git
 cd MacSentry
 ./build.sh                    # build, cài ~/Applications/MacSentry.app và chạy
 ```

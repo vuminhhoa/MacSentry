@@ -7,7 +7,7 @@ body:
       value: |
         Thanks for the report. Logs and alerts can contain host names, user names, IPs and command lines:
         please remove anything private, and never paste your bot token or chat ID.
-        Security vulnerabilities go through [private reporting](https://github.com/vuminhhoa/MacSentry/security/advisories/new) instead.
+        Security vulnerabilities go through [private reporting](https://github.com/vuminhhoa/macsentry/security/advisories/new) instead.
   - type: dropdown
     id: component
     attributes:
