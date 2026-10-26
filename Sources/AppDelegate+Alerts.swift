@@ -9,11 +9,12 @@ extension AppDelegate {
         // Kết nối từ chính máy này coi như tin cậy (không popup)
         let local = c.ip.hasPrefix("127.") || c.ip == "::1" || c.ip == "localhost"
         let trusted = monitor.trusted.contains(c.ip) || local
-        let title = trusted ? "Kết nối \(c.service) (IP tin cậy)" : "⚠️ Có kết nối \(c.service) mới!"
-        let body = "Dịch vụ: \(c.service)\nIP: \(c.ip):\(c.remotePort)" + (c.user.map { "\nUser: \($0)" } ?? "")
+        let title = trusted ? L("Kết nối %@ (IP tin cậy)", c.serviceName) : L("⚠️ Có kết nối %@ mới!", c.serviceName)
+        let body = L("Dịch vụ: %@", c.serviceName) + "\nIP: \(c.ip):\(c.remotePort)" + (c.user.map { "\nUser: \($0)" } ?? "")
         // Gửi Telegram trước tiên, trước cả popup (runModal sẽ chặn luồng chính)
         if !Telegram.daemonInstalled {
-            Telegram.send("\(trusted ? "✅ Kết nối \(c.service) (IP tin cậy)" : "🚨 Kết nối \(c.service) từ IP LẠ")\n\(body)\nLúc: \(timeFmt.string(from: c.firstSeen))",
+            Telegram.send((trusted ? L("✅ Kết nối %@ (IP tin cậy)", c.serviceName) : L("🚨 Kết nối %@ từ IP LẠ", c.serviceName))
+                          + "\n\(body)\n" + L("Lúc: %@", timeFmt.string(from: c.firstSeen)),
                           silent: trusted)
         }
 
@@ -39,11 +40,11 @@ extension AppDelegate {
             NSApp.activate(ignoringOtherApps: true)
             let a = NSAlert()
             a.alertStyle = .critical
-            a.messageText = "Có kết nối \(c.service) từ IP lạ"
-            a.informativeText = body + "\nThời điểm: \(timeFmt.string(from: c.firstSeen))"
+            a.messageText = L("Có kết nối %@ từ IP lạ", c.serviceName)
+            a.informativeText = body + "\n" + L("Thời điểm: %@", timeFmt.string(from: c.firstSeen))
             a.addButton(withTitle: "OK")
-            a.addButton(withTitle: "Tin cậy IP này")
-            a.addButton(withTitle: "Xem danh sách")
+            a.addButton(withTitle: L("Tin cậy IP này"))
+            a.addButton(withTitle: L("Xem danh sách"))
             switch a.runModal() {
             case .alertSecondButtonReturn: monitor.toggleTrust(c.ip)
             case .alertThirdButtonReturn: showWindow(.active)

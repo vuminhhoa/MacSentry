@@ -17,9 +17,9 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
     private lazy var navItem: NSToolbarItemGroup = {
         let g = NSToolbarItemGroup(
             itemIdentifier: Self.navID,
-            images: [NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: "Quay lại")!,
-                     NSImage(systemSymbolName: "chevron.forward", accessibilityDescription: "Tiếp")!],
-            selectionMode: .momentary, labels: ["Quay lại", "Tiếp"], target: self, action: #selector(navigate(_:)))
+            images: [NSImage(systemSymbolName: "chevron.backward", accessibilityDescription: L("Quay lại"))!,
+                     NSImage(systemSymbolName: "chevron.forward", accessibilityDescription: L("Tiếp"))!],
+            selectionMode: .momentary, labels: [L("Quay lại"), L("Tiếp")], target: self, action: #selector(navigate(_:)))
         g.controlRepresentation = .expanded
         g.isNavigational = true
         g.autovalidates = false
@@ -35,8 +35,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
 
     init(monitor: Monitor, ui: ViewState, log: EventLog) {
         self.ui = ui
-        let sideVC = NSHostingController(rootView: SidebarView(monitor: monitor, ui: ui, log: log))
-        let detailVC = NSHostingController(rootView: DetailView(monitor: monitor, ui: ui, log: log))
+        let sideVC = NSHostingController(rootView: LocalizedRoot(SidebarView(monitor: monitor, ui: ui, log: log)))
+        let detailVC = NSHostingController(rootView: LocalizedRoot(DetailView(monitor: monitor, ui: ui, log: log)))
         sideVC.sizingOptions = []
         detailVC.sizingOptions = []
 
@@ -66,6 +66,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
 
         // Mọi thay đổi của ViewState → cập nhật tiêu đề, nút ‹ ›, ô tìm kiếm (sau khi giá trị đã đổi)
         ui.objectWillChange.receive(on: RunLoop.main).sink { [weak self] in self?.sync() }.store(in: &subs)
+        // Đổi ngôn ngữ → nhãn nút ‹ ›, tiêu đề, gợi ý ô tìm kiếm (nội dung SwiftUI tự dựng lại qua LocalizedRoot)
+        Lang.shared.$code.dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in self?.relocalize() }.store(in: &subs)
         sync()
     }
 
@@ -77,8 +79,8 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         if w.title != p.title { w.title = p.title }
         // Chỉ gán khi đổi: hàm này chạy ở mọi thay đổi của ViewState (gõ phím, chọn dòng…)
         let nav = navItem.subitems
-        set(nav[0], enabled: !ui.back.isEmpty, tip: ui.back.last.map { "Quay lại: \($0.title)" } ?? "Quay lại")
-        set(nav[1], enabled: !ui.forward.isEmpty, tip: ui.forward.last.map { "Tiếp: \($0.title)" } ?? "Tiếp")
+        set(nav[0], enabled: !ui.back.isEmpty, tip: ui.back.last.map { L("Quay lại: %@", $0.title) } ?? L("Quay lại"))
+        set(nav[1], enabled: !ui.forward.isEmpty, tip: ui.forward.last.map { L("Tiếp: %@", $0.title) } ?? L("Tiếp"))
         guard p != lastPage else { return }
         lastPage = p
         // Ô tìm kiếm luôn hiện và luôn bật: thêm/gỡ, ẩn/hiện hay bật/tắt ô đều làm toolbar (macOS 26+) vẽ lại
@@ -89,6 +91,12 @@ final class MainWindowController: NSWindowController, NSToolbarDelegate, NSSearc
         if field.placeholderString != prompt { field.placeholderString = prompt }
         let q = p.searchPrompt == nil ? "" : ui.queries[p] ?? ""
         if field.stringValue != q { field.stringValue = q }
+    }
+
+    private func relocalize() {
+        for (item, title) in zip(navItem.subitems, [L("Quay lại"), L("Tiếp")]) { item.label = title }
+        lastPage = nil     // gán lại gợi ý ô tìm kiếm
+        sync()
     }
 
     private func set(_ item: NSToolbarItem?, enabled: Bool, tip: String) {

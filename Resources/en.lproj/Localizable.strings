@@ -1,0 +1,265 @@
+/* English. Khoá là chuỗi tiếng Việt trong mã nguồn (Sources/*.swift, hàm L / Lplural).
+   Khoá "<khoá>#one" là dạng số ít dùng khi số đếm bằng 1. */
+
+/* Trang & điều hướng */
+"Tổng quan" = "Overview";
+"Đang kết nối" = "Active Connections";
+"Lịch sử kết nối" = "Connection History";
+"Sự kiện" = "Events";
+"IP tin cậy" = "Trusted IPs";
+"Cài đặt" = "Settings";
+"Quay lại" = "Back";
+"Tiếp" = "Forward";
+"Quay lại: %@" = "Back to %@";
+"Tiếp: %@" = "Forward to %@";
+"Tìm IP, dịch vụ, user" = "Search IP, service, user";
+"Tìm sự kiện (-từ để loại trừ)" = "Search events (-word to exclude)";
+"Tìm IP" = "Search IP";
+
+/* Khoảng thời gian, mức độ */
+"Mọi lúc" = "All Time";
+"1 giờ qua" = "Last Hour";
+"Hôm nay" = "Today";
+"7 ngày qua" = "Last 7 Days";
+"Thông tin" = "Info";
+"Chú ý" = "Notice";
+"Cảnh báo" = "Alert";
+
+/* Trạng thái bảo vệ */
+"Có truy cập từ IP lạ" = "Access from Unknown IP";
+"Bảo vệ chưa đầy đủ" = "Protection Incomplete";
+"Máy đang được bảo vệ" = "Your Mac Is Protected";
+"%@ từ %@" = "%@ from %@";
+"không chạy" = "not running";
+"chưa cài" = "not installed";
+"Mọi thành phần giám sát đều đang chạy." = "All monitoring components are running.";
+"Đã sao chép" = "Copied";
+
+/* Thành phần, dịch vụ (tên gốc lưu trong dữ liệu) */
+"macsentryd (daemon chính)" = "macsentryd (main daemon)";
+"Chia sẻ file SMB" = "SMB File Sharing";
+
+/* Tổng quan */
+"Xem kết nối" = "View Connections";
+"%ld IP lạ" = "%ld unknown IPs";
+"%ld IP lạ#one" = "%ld unknown IP";
+"Cảnh báo hôm nay" = "Alerts Today";
+"%ld sự kiện" = "%ld events";
+"%ld sự kiện#one" = "%ld event";
+"Phiên đã ghi" = "Recorded Sessions";
+"Cảnh báo Telegram" = "Telegram Alerts";
+"Chưa cấu hình" = "Not Configured";
+"Đang bật" = "On";
+"Thành phần giám sát" = "Monitoring Components";
+"Đang chạy" = "Running";
+"Chưa cài" = "Not Installed";
+"Không chạy" = "Not Running";
+"Thông báo macOS" = "macOS Notifications";
+"Được phép" = "Allowed";
+"Bị tắt" = "Off";
+"Không đọc được log của daemon." = "Can’t read the daemon log.";
+"Chưa có sự kiện đáng chú ý." = "No notable events yet.";
+"Sự kiện đáng chú ý gần đây" = "Recent Notable Events";
+"Xem tất cả" = "Show All";
+
+/* Cài đặt */
+"Chung" = "General";
+"Ngôn ngữ" = "Language";
+"Theo hệ thống (%@)" = "System (%@)";
+"Ẩn token" = "Hide Token";
+"Hiện token" = "Show Token";
+"-100… hoặc ID người dùng" = "-100… or user ID";
+"Chưa cấu hình — cảnh báo chỉ hiện trên máy này." = "Not configured — alerts are shown on this Mac only.";
+"Gửi thử" = "Send Test";
+"Lưu" = "Save";
+"Cảnh báo được gửi ra ngoài máy để kẻ xâm nhập không xoá được dấu vết. Lưu tại %@ (chỉ user này đọc được)." = "Alerts are sent off this Mac so an intruder can’t erase the trail. Saved at %@ (readable by this user only).";
+"Cài / cập nhật daemon" = "Install / Update Daemon";
+"Đã sao chép lệnh" = "Command Copied";
+"Sao chép lệnh" = "Copy Command";
+"Thông báo" = "Notifications";
+"Mở cài đặt" = "Open Settings";
+"Chia sẻ (Remote Login, Screen Sharing…)" = "Sharing (Remote Login, Screen Sharing…)";
+"Dữ liệu" = "Data";
+"Lịch sử, IP tin cậy, cấu hình" = "History, trusted IPs, configuration";
+"Mở thư mục" = "Open Folder";
+"Log của daemon" = "Daemon Log";
+"Mở bằng Console" = "Open in Console";
+"Đã lưu cấu hình Telegram" = "Telegram Settings Saved";
+"🔔 Tin nhắn thử từ MacSentry" = "🔔 Test message from MacSentry";
+"Đã gửi — kiểm tra Telegram" = "Sent — check Telegram";
+"Gửi thất bại — kiểm tra token, chat ID, mạng" = "Failed — check the token, chat ID and network";
+
+/* Bảng kết nối / lịch sử */
+"đang kết nối" = "connected";
+"Sao chép IP" = "Copy IP";
+"Sao chép %ld IP" = "Copy %ld IPs";
+"Sao chép dòng" = "Copy Row";
+"Sao chép %ld dòng" = "Copy %ld Rows";
+"Bỏ tin cậy" = "Remove Trust";
+"Đánh dấu tin cậy" = "Mark as Trusted";
+"IP chưa được tin cậy" = "Untrusted IP";
+"Không có truy cập từ xa" = "No Remote Access";
+"Khi có ai kết nối vào máy qua SSH, Screen Sharing, SMB… phiên đó sẽ hiện ở đây và bạn nhận cảnh báo ngay." = "When someone connects to this Mac via SSH, Screen Sharing, SMB… the session shows up here and you’re alerted right away.";
+"Dịch vụ" = "Service";
+"Cổng / TTY" = "Port / TTY";
+"Bắt đầu" = "Started";
+"Kết thúc" = "Ended";
+"Thời lượng" = "Duration";
+"Đã sao chép IP" = "IP Copied";
+"Không có kết quả" = "No Results";
+"Thử từ khoá khác." = "Try a different search.";
+"Thử từ khoá khác hoặc bỏ lọc dịch vụ." = "Try a different search or clear the service filter.";
+"%ld phiên" = "%ld sessions";
+"%ld phiên#one" = "%ld session";
+"%ld từ IP chưa tin cậy" = "%ld from untrusted IPs";
+"%ld từ IP chưa tin cậy#one" = "%ld from an untrusted IP";
+"Nhấp đúp để sao chép IP · chuột phải để thêm thao tác" = "Double-click to copy IP · right-click for more actions";
+"Chưa có lịch sử" = "No History Yet";
+"Mỗi phiên truy cập từ xa sẽ được ghi lại tại đây." = "Every remote access session will be recorded here.";
+"đang mở" = "open";
+"· đã chọn %ld" = "· %ld selected";
+"Mở thư mục dữ liệu" = "Open Data Folder";
+"Dịch vụ:" = "Service:";
+"Mọi dịch vụ" = "All Services";
+"Lưu tối đa 2.000 phiên gần nhất" = "Keeps the latest 2,000 sessions";
+
+/* IP tin cậy */
+"Chưa từng kết nối" = "Never connected";
+"%ld lần · gần nhất %@" = "%ld connections · last %@";
+"%ld lần · gần nhất %@#one" = "%ld connection · last %@";
+"Đã thêm %@" = "Added %@";
+"Đã bỏ tin cậy %@" = "Removed trust for %@";
+"Kết nối từ các IP này không bật popup cảnh báo; thông báo và tin Telegram vẫn được gửi nhưng không kêu chuông." = "Connections from these IPs don’t trigger alert popups; notifications and Telegram messages are still sent, silently.";
+"Chưa có IP nào." = "No IPs yet.";
+"Không có IP khớp với từ khoá." = "No IPs match the search.";
+"Thêm IP" = "Add IP";
+"IPv4 hoặc IPv6, vd. 192.168.1.10" = "IPv4 or IPv6, e.g. 192.168.1.10";
+"Thêm" = "Add";
+"Đã tin cậy (%ld)" = "Trusted (%ld)";
+"IP không hợp lệ." = "Invalid IP address.";
+"IP này đã có trong danh sách." = "This IP is already in the list.";
+"Tin cậy" = "Trust";
+"Đã tin cậy %@" = "Trusted %@";
+"Đã từng kết nối, chưa tin cậy" = "Previously Connected, Not Trusted";
+"Chỉ tin cậy IP bạn nhận ra (máy của bạn, mạng nội bộ, VPN công ty)." = "Only trust IPs you recognize (your own devices, local network, company VPN).";
+"Hiện trong Finder" = "Show in Finder";
+"Máy chủ tin cậy của daemon" = "Daemon Trusted Hosts";
+"Danh sách khác, dùng cho cảnh báo kết nối ra ngoài (reverse shell). Sửa bằng: %@" = "A separate list, used for outbound connection alerts (reverse shells). Edit with: %@";
+
+/* Sự kiện */
+"Không đọc được log" = "Can’t Read Log";
+"Chưa có file %@." = "%@ doesn’t exist yet.";
+"Chưa cài macsentryd. Cài bằng lệnh: %@" = "macsentryd isn’t installed. Install it with: %@";
+"Mức độ" = "Level";
+"Tất cả" = "All";
+"Thời gian" = "Time";
+"Bỏ lọc" = "Clear Filters";
+"Bỏ mọi bộ lọc và từ khoá" = "Clear all filters and the search";
+"Tự cập nhật" = "Live";
+"Đang tự hiện sự kiện mới — bấm để tạm dừng" = "Showing new events live — click to pause";
+"Đã tạm dừng — bấm để tự hiện sự kiện mới" = "Paused — click to show new events live";
+"Tải lại" = "Reload";
+"Tải lại ngay" = "Reload now";
+"Mức" = "Level";
+"Nội dung" = "Message";
+"Sao chép nội dung" = "Copy Message";
+"Lọc sự kiện cùng loại" = "Filter Similar Events";
+"Không có sự kiện phù hợp" = "No Matching Events";
+"Đang đọc thêm phần log cũ…" = "Reading older log entries…";
+"Thử từ khoá khác hoặc nới bộ lọc." = "Try a different search or loosen the filters.";
+"Sao chép" = "Copy";
+"Sao chép cả dòng log (⌘C)" = "Copy the whole log line (⌘C)";
+"Chọn một sự kiện để xem chi tiết" = "Select an event to see details";
+"· đã đọc %@ / %@" = "· loaded %@ of %@";
+"Tải thêm cũ hơn" = "Load Older";
+
+/* Tên trường trong dòng log của daemon (khung chi tiết sự kiện) */
+"Đường dẫn" = "Path";
+"Lệnh" = "Command";
+"Tiến trình cha" = "Parent Process";
+"Tiến trình" = "Process";
+"Chuỗi tiến trình" = "Process Chain";
+"File chạy" = "Executable";
+"Chạy từ" = "Launched From";
+"Chạy" = "Runs";
+"Cài bởi" = "Installed By";
+"Nguồn" = "Source";
+"Cổng" = "Port";
+"Chương trình" = "Program";
+"Chữ ký" = "Signature";
+
+/* Main menu */
+"Giới thiệu MacSentry" = "About MacSentry";
+"Cài đặt…" = "Settings…";
+"Ẩn MacSentry" = "Hide MacSentry";
+"Ẩn các app khác" = "Hide Others";
+"Sửa" = "Edit";
+"Hoàn tác" = "Undo";
+"Làm lại" = "Redo";
+"Cắt" = "Cut";
+"Dán" = "Paste";
+"Dán và khớp kiểu" = "Paste and Match Style";
+"Xoá" = "Delete";
+"Chọn tất cả" = "Select All";
+"Tìm…" = "Find…";
+"Xem" = "View";
+"Cửa sổ" = "Window";
+"Thu nhỏ" = "Minimize";
+"Phóng to" = "Zoom";
+"Đóng" = "Close";
+
+/* Menu thanh menu */
+"MacSentry: không có truy cập từ xa" = "MacSentry: no remote access";
+"MacSentry: %ld kết nối truy cập từ xa" = "MacSentry: %ld remote connections";
+"MacSentry: %ld kết nối truy cập từ xa#one" = "MacSentry: %ld remote connection";
+"Đang truy cập từ xa:" = "Remote access in progress:";
+"Bấm để sao chép IP" = "Click to copy IP";
+"Mở MacSentry…" = "Open MacSentry…";
+"Telegram: chưa cấu hình…" = "Telegram: Not Configured…";
+"Gửi thử Telegram" = "Send Telegram Test";
+"Daemon macsentryd: đã cài" = "macsentryd daemon: installed";
+"Daemon macsentryd: CHƯA cài" = "macsentryd daemon: NOT installed";
+"Cài đặt Chia sẻ (Remote Login)…" = "Sharing Settings (Remote Login)…";
+"Chưa cấu hình Telegram" = "Telegram Isn’t Configured";
+"Tạo file telegram.json trong thư mục vừa mở với nội dung:" = "Create a telegram.json file in the folder that just opened, containing:";
+
+/* Cảnh báo kết nối */
+"Kết nối %@ (IP tin cậy)" = "%@ connection (trusted IP)";
+"⚠️ Có kết nối %@ mới!" = "⚠️ New %@ connection!";
+"Dịch vụ: %@" = "Service: %@";
+"✅ Kết nối %@ (IP tin cậy)" = "✅ %@ connection (trusted IP)";
+"🚨 Kết nối %@ từ IP LẠ" = "🚨 %@ connection from an UNKNOWN IP";
+"Có kết nối %@ từ IP lạ" = "%@ Connection from Unknown IP";
+"Thời điểm: %@" = "Time: %@";
+"Tin cậy IP này" = "Trust This IP";
+"Xem danh sách" = "View List";
+
+/* Tin Telegram */
+"Lúc: %@" = "At: %@";
+"%@ Đã đăng nhập SSH" = "%@ SSH login";
+"🔌 Kết thúc phiên %@" = "🔌 %@ session ended";
+"Thời lượng: %@" = "Duration: %@";
+"🔴 Máy đang tắt / khởi động lại / đăng xuất" = "🔴 Mac is shutting down / restarting / logging out";
+"😴 Máy đi ngủ" = "😴 Mac went to sleep";
+"Đã ngủ: %@" = "Slept for: %@";
+"☀️ Máy thức dậy" = "☀️ Mac woke up";
+"🔒 Màn hình đã khoá" = "🔒 Screen locked";
+"🌙 Máy được mở khoá lúc NỬA ĐÊM" = "🌙 Mac unlocked in the MIDDLE OF THE NIGHT";
+"🔓 Màn hình được mở khoá" = "🔓 Screen unlocked";
+"▶️ MacSentry đã khởi động" = "▶️ MacSentry started";
+"👤 %@ đã đăng nhập máy" = "👤 %@ logged in";
+"🟢 Máy vừa khởi động" = "🟢 Mac just started up";
+"Bật lúc: %@" = "Powered on at: %@";
+"Đăng nhập: %@ lúc %@" = "Login: %@ at %@";
+"▶️ MacSentry đã khởi động lại (máy bật từ %@)" = "▶️ MacSentry restarted (Mac on since %@)";
+"⛔️ Có lệnh thoát MacSentry — đã chặn" = "⛔️ Attempt to quit MacSentry — blocked";
+"⏹ MacSentry (app) đã bị tắt" = "⏹ MacSentry (app) was terminated";
+"✅ %@ đã chạy lại" = "✅ %@ is running again";
+"⚠️ %@ KHÔNG chạy (~1 phút)" = "⚠️ %@ is NOT running (~1 minute)";
+"Có thể đã bị tắt bằng launchctl bootout / kill." = "It may have been stopped with launchctl bootout / kill.";
+"Kiểm tra: %@" = "Check: %@";
+"📷 Camera: %@" = "📷 Camera: %@";
+"🎙 Micro đang được dùng bởi: %@" = "🎙 Microphone in use by: %@";
+"App đang mở phía trước: %@" = "Frontmost app: %@";
+" — ĐANG BẬT" = " — ON";
+" — đã tắt" = " — off";

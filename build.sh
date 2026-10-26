@@ -41,6 +41,10 @@ compile "$APP/Contents/MacOS/MacSentry" Sources/*.swift \
 compile build/macsentryd daemon/Sources/*.swift shared/*.swift
 compile build/macsentry-es es/*.swift shared/*.swift
 
+# Bản dịch giao diện (Resources/<mã>.lproj). Tiếng Việt là ngôn ngữ gốc — xem Sources/Localization.swift
+plutil -lint -s Resources/*.lproj/*.strings
+cp -R Resources/*.lproj "$APP/Contents/Resources/"
+
 # Logo: app tự vẽ ra các cỡ PNG → đóng thành AppIcon.icns (Finder, System Settings, Dock đọc icon từ file này).
 # Dùng bản đúng kiến trúc của máy đang build để chạy được cả khi build chéo.
 ICON_RENDERER="$APP/Contents/MacOS/MacSentry"
@@ -57,6 +61,8 @@ cat > "$APP/Contents/Info.plist" <<PLIST
   <key>CFBundleDisplayName</key><string>MacSentry</string>
   <key>CFBundleExecutable</key><string>MacSentry</string>
   <key>CFBundleIconFile</key><string>AppIcon</string>
+  <key>CFBundleDevelopmentRegion</key><string>vi</string>
+  <key>CFBundleLocalizations</key><array><string>vi</string><string>en</string></array>
   <key>CFBundlePackageType</key><string>APPL</string>
   <key>CFBundleShortVersionString</key><string>$VERSION</string>
   <key>CFBundleVersion</key><string>$BUILD_NUMBER</string>

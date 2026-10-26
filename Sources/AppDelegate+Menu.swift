@@ -22,35 +22,36 @@ extension AppDelegate {
         button.imagePosition = count > 0 ? .imageLeading : .imageOnly
         button.font = .monospacedDigitSystemFont(ofSize: NSFont.systemFontSize, weight: .regular)
         button.title = count > 0 ? "\(count)" : ""
-        button.toolTip = count == 0 ? "MacSentry: không có truy cập từ xa" : "MacSentry: \(count) kết nối truy cập từ xa"
+        button.toolTip = count == 0 ? L("MacSentry: không có truy cập từ xa") : Lplural("MacSentry: %ld kết nối truy cập từ xa", count)
     }
 
     // Dựng lại menu mỗi lần mở để thời lượng luôn mới
     func menuNeedsUpdate(_ menu: NSMenu) {
+        Lang.shared.resolve()
         menu.removeAllItems()
         if monitor.active.isEmpty {
-            menu.addItem(NSMenuItem(title: "Không có truy cập từ xa", action: nil, keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: L("Không có truy cập từ xa"), action: nil, keyEquivalent: ""))
         } else {
-            menu.addItem(NSMenuItem(title: "Đang truy cập từ xa:", action: nil, keyEquivalent: ""))
+            menu.addItem(NSMenuItem(title: L("Đang truy cập từ xa:"), action: nil, keyEquivalent: ""))
             for c in monitor.active {
                 let mark = monitor.isTrusted(c.ip) ? "✅" : "⚠️"
                 let user = c.user.map { " — \($0)" } ?? ""
-                let item = NSMenuItem(title: "\(mark) [\(c.service)] \(c.ip):\(c.remotePort)\(user)  (\(durationString(c.firstSeen, Date())))",
+                let item = NSMenuItem(title: "\(mark) [\(c.serviceName)] \(c.ip):\(c.remotePort)\(user)  (\(durationString(c.firstSeen, Date())))",
                                       action: #selector(copyIP(_:)), keyEquivalent: "")
                 item.representedObject = c.ip
                 item.target = self
-                item.toolTip = "Bấm để copy IP"
+                item.toolTip = L("Bấm để sao chép IP")
                 menu.addItem(item)
             }
         }
         menu.addItem(.separator())
-        menu.addItem(item("Mở MacSentry…", #selector(openWindow), "l"))
-        menu.addItem(item("Cài đặt…", #selector(openSettings), ","))
-        menu.addItem(item(Telegram.config == nil ? "Telegram: chưa cấu hình…" : "Gửi thử Telegram", #selector(testTelegram), ""))
-        let daemon = NSMenuItem(title: Telegram.daemonInstalled ? "Daemon macsentryd: đã cài" : "Daemon macsentryd: CHƯA cài",
+        menu.addItem(item(L("Mở MacSentry…"), #selector(openWindow), "l"))
+        menu.addItem(item(L("Cài đặt…"), #selector(openSettings), ","))
+        menu.addItem(item(Telegram.config == nil ? L("Telegram: chưa cấu hình…") : L("Gửi thử Telegram"), #selector(testTelegram), ""))
+        let daemon = NSMenuItem(title: Telegram.daemonInstalled ? L("Daemon macsentryd: đã cài") : L("Daemon macsentryd: CHƯA cài"),
                                 action: nil, keyEquivalent: "")
         menu.addItem(daemon)
-        menu.addItem(item("Cài đặt Chia sẻ (Remote Login)…", #selector(openSharing), ""))
+        menu.addItem(item(L("Cài đặt Chia sẻ (Remote Login)…"), #selector(openSharing), ""))
     }
 
     func item(_ title: String, _ sel: Selector, _ key: String) -> NSMenuItem {
@@ -138,12 +139,12 @@ extension AppDelegate {
         if Telegram.config == nil {
             NSWorkspace.shared.open(Store.dir)
             let a = NSAlert()
-            a.messageText = "Chưa cấu hình Telegram"
-            a.informativeText = "Tạo file telegram.json trong thư mục vừa mở với nội dung:\n{\"botToken\": \"...\", \"chatId\": \"...\"}"
+            a.messageText = L("Chưa cấu hình Telegram")
+            a.informativeText = L("Tạo file telegram.json trong thư mục vừa mở với nội dung:") + "\n{\"botToken\": \"...\", \"chatId\": \"...\"}"
             NSApp.activate(ignoringOtherApps: true)
             a.runModal()
         } else {
-            Telegram.send("🔔 Tin nhắn thử từ MacSentry")
+            Telegram.send(L("🔔 Tin nhắn thử từ MacSentry"))
         }
     }
 }

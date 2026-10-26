@@ -1,0 +1,3 @@
+/* Tiếng Việt là ngôn ngữ gốc: chuỗi trong mã nguồn đã là tiếng Việt và cũng là khoá tra cứu,
+   nên file này để trống. Thư mục vi.lproj giúp macOS biết app hỗ trợ tiếng Việt
+   (danh sách ngôn ngữ riêng cho app trong Cài đặt hệ thống › Chung › Ngôn ngữ & Khu vực). */

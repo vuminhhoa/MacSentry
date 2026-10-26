@@ -16,6 +16,7 @@ final class TelegramForm: ObservableObject {
 struct SettingsPage: View {
     @ObservedObject var ui: ViewState
     @ObservedObject var form: TelegramForm
+    @ObservedObject var lang = Lang.shared
 
     static let installCommand = Store.daemonInstallCommand
 
@@ -24,6 +25,12 @@ struct SettingsPage: View {
 
     var body: some View {
         Form {
+                Section(L("Chung")) {
+                    Picker(L("Ngôn ngữ"), selection: $lang.choice) {
+                        ForEach(AppLanguage.allCases) { Text($0.title).tag($0) }
+                    }
+                }
+
                 Section {
                     LabeledContent("Bot token") {
                         HStack {
@@ -35,11 +42,11 @@ struct SettingsPage: View {
                             .textFieldStyle(.roundedBorder)
                             Button { form.showToken.toggle() } label: { Image(systemName: form.showToken ? "eye.slash" : "eye") }
                                 .buttonStyle(.borderless)
-                                .help(form.showToken ? "Ẩn token" : "Hiện token")
+                                .help(form.showToken ? L("Ẩn token") : L("Hiện token"))
                         }
                     }
                     LabeledContent("Chat ID") {
-                        TextField("", text: $form.chatId, prompt: Text("-100… hoặc ID người dùng"))
+                        TextField("", text: $form.chatId, prompt: Text(L("-100… hoặc ID người dùng")))
                             .labelsHidden()
                             .textFieldStyle(.roundedBorder)
                     }
@@ -48,56 +55,56 @@ struct SettingsPage: View {
                             Label(form.testText, systemImage: ok ? "checkmark.circle.fill" : "xmark.octagon.fill")
                                 .foregroundStyle(ok ? .green : .red)
                         } else if Telegram.config == nil {
-                            Text("Chưa cấu hình — cảnh báo chỉ hiện trên máy này.").foregroundStyle(.secondary)
+                            Text(L("Chưa cấu hình — cảnh báo chỉ hiện trên máy này.")).foregroundStyle(.secondary)
                         }
                         Spacer()
                         if form.testing { ProgressView().controlSize(.small) }
-                        Button("Gửi thử", action: test).disabled(Telegram.config == nil || dirty || form.testing)
-                        Button("Lưu", action: save).keyboardShortcut("s")
+                        Button(L("Gửi thử"), action: test).disabled(Telegram.config == nil || dirty || form.testing)
+                        Button(L("Lưu"), action: save).keyboardShortcut("s")
                             .buttonStyle(.borderedProminent)    // thao tác chính của nhóm → tô màu nhấn
                             .disabled(!dirty || !valid)
                     }
                 } header: {
                     Text("Telegram")
                 } footer: {
-                    Text("Cảnh báo được gửi ra ngoài máy để kẻ xâm nhập không xoá được dấu vết. Lưu tại \(Telegram.configURL.path) (chỉ user này đọc được).")
+                    Text(L("Cảnh báo được gửi ra ngoài máy để kẻ xâm nhập không xoá được dấu vết. Lưu tại %@ (chỉ user này đọc được).", Telegram.configURL.path))
                         .font(.callout).foregroundStyle(.secondary)
                 }
 
-                Section("Thành phần giám sát") {
+                Section(L("Thành phần giám sát")) {
                     ForEach(ui.components, id: \.name) { c in
-                        LabeledContent(c.name) {
-                            StatusPill(text: !c.installed ? "Chưa cài" : c.running ? "Đang chạy" : "Không chạy",
+                        LabeledContent(L(c.name)) {
+                            StatusPill(text: !c.installed ? L("Chưa cài") : c.running ? L("Đang chạy") : L("Không chạy"),
                                        color: !c.installed ? .orange : c.running ? .green : .red)
                         }
                     }
-                    LabeledContent("Cài / cập nhật daemon") {
+                    LabeledContent(L("Cài / cập nhật daemon")) {
                         HStack {
                             Text(Self.installCommand).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                            Button { ui.copy(Self.installCommand, "Đã sao chép lệnh") } label: { Image(systemName: "doc.on.doc") }
-                                .buttonStyle(.borderless).help("Sao chép lệnh")
+                            Button { ui.copy(Self.installCommand, L("Đã sao chép lệnh")) } label: { Image(systemName: "doc.on.doc") }
+                                .buttonStyle(.borderless).help(L("Sao chép lệnh"))
                         }
                     }
                 }
 
                 Section("macOS") {
-                    LabeledContent("Thông báo") {
+                    LabeledContent(L("Thông báo")) {
                         HStack {
-                            StatusPill(text: ui.notificationsAllowed ? "Được phép" : "Bị tắt", color: ui.notificationsAllowed ? .green : .orange)
-                            Button("Mở cài đặt") { open("x-apple.systempreferences:com.apple.Notifications-Settings.extension") }
+                            StatusPill(text: ui.notificationsAllowed ? L("Được phép") : L("Bị tắt"), color: ui.notificationsAllowed ? .green : .orange)
+                            Button(L("Mở cài đặt")) { open("x-apple.systempreferences:com.apple.Notifications-Settings.extension") }
                         }
                     }
-                    LabeledContent("Chia sẻ (Remote Login, Screen Sharing…)") {
-                        Button("Mở cài đặt") { open("x-apple.systempreferences:com.apple.Sharing-Settings.extension") }
+                    LabeledContent(L("Chia sẻ (Remote Login, Screen Sharing…)")) {
+                        Button(L("Mở cài đặt")) { open("x-apple.systempreferences:com.apple.Sharing-Settings.extension") }
                     }
                 }
 
-                Section("Dữ liệu") {
-                    LabeledContent("Lịch sử, IP tin cậy, cấu hình") {
-                        Button("Mở thư mục") { NSWorkspace.shared.open(Store.dir) }
+                Section(L("Dữ liệu")) {
+                    LabeledContent(L("Lịch sử, IP tin cậy, cấu hình")) {
+                        Button(L("Mở thư mục")) { NSWorkspace.shared.open(Store.dir) }
                     }
-                    LabeledContent("Log của daemon") {
-                        Button("Mở bằng Console") { NSWorkspace.shared.open(URL(fileURLWithPath: Store.daemonLogPath)) }
+                    LabeledContent(L("Log của daemon")) {
+                        Button(L("Mở bằng Console")) { NSWorkspace.shared.open(URL(fileURLWithPath: Store.daemonLogPath)) }
                     }
                 }
         }
@@ -112,16 +119,16 @@ struct SettingsPage: View {
         Store.save(cfg, to: Telegram.configURL)
         form.token = cfg.botToken; form.chatId = cfg.chatId
         form.testOK = nil
-        ui.flash("Đã lưu cấu hình Telegram")
+        ui.flash(L("Đã lưu cấu hình Telegram"))
     }
 
     func test() {
         form.testing = true; form.testOK = nil
-        Telegram.send("🔔 Tin nhắn thử từ MacSentry") { ok in
+        Telegram.send(L("🔔 Tin nhắn thử từ MacSentry")) { ok in
             DispatchQueue.main.async {
                 form.testing = false
                 form.testOK = ok
-                form.testText = ok ? "Đã gửi — kiểm tra Telegram" : "Gửi thất bại — kiểm tra token, chat ID, mạng"
+                form.testText = ok ? L("Đã gửi — kiểm tra Telegram") : L("Gửi thất bại — kiểm tra token, chat ID, mạng")
             }
         }
     }

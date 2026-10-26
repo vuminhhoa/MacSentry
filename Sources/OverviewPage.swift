@@ -50,7 +50,7 @@ struct OverviewPage: View {
                     Text(prot.detail).foregroundStyle(.secondary).multilineTextAlignment(.center)
                     Text(Telegram.hostName).font(.callout).foregroundStyle(.tertiary)
                     if !prot.untrusted.isEmpty {
-                        Button("Xem kết nối") { ui.page = .active }.padding(.top, 4)
+                        Button(L("Xem kết nối")) { ui.page = .active }.padding(.top, 4)
                     }
                 }
                 .frame(maxWidth: .infinity)
@@ -58,36 +58,36 @@ struct OverviewPage: View {
             }
 
             Section {
-                NavRow(icon: Page.active.icon, color: .green, title: "Đang kết nối",
-                       value: prot.untrusted.isEmpty ? "\(monitor.active.count)" : "\(monitor.active.count) · \(prot.untrusted.count) IP lạ",
+                NavRow(icon: Page.active.icon, color: .green, title: L("Đang kết nối"),
+                       value: prot.untrusted.isEmpty ? "\(monitor.active.count)" : "\(monitor.active.count) · " + Lplural("%ld IP lạ", prot.untrusted.count),
                        valueColor: prot.untrusted.isEmpty ? .secondary : .red) { ui.page = .active }
-                NavRow(icon: "exclamationmark.octagon.fill", color: .red, title: "Cảnh báo hôm nay",
-                       value: "\(todayAlerts) / \(today.count) sự kiện") {
+                NavRow(icon: "exclamationmark.octagon.fill", color: .red, title: L("Cảnh báo hôm nay"),
+                       value: "\(todayAlerts) / " + Lplural("%ld sự kiện", today.count)) {
                     ui.eventLevel = .alert; ui.eventRange = .today; ui.page = .events
                 }
-                NavRow(icon: Page.history.icon, color: .indigo, title: "Phiên đã ghi",
+                NavRow(icon: Page.history.icon, color: .indigo, title: L("Phiên đã ghi"),
                        value: "\(monitor.history.count)") { ui.page = .history }
-                NavRow(icon: "paperplane.fill", color: .blue, title: "Cảnh báo Telegram",
-                       value: Telegram.config == nil ? "Chưa cấu hình" : "Đang bật",
+                NavRow(icon: "paperplane.fill", color: .blue, title: L("Cảnh báo Telegram"),
+                       value: Telegram.config == nil ? L("Chưa cấu hình") : L("Đang bật"),
                        valueColor: Telegram.config == nil ? .orange : .secondary) { ui.page = .settings }
             }
 
-            Section("Thành phần giám sát") {
-                LabeledContent("MacSentry (app)") { StatusPill(text: "Đang chạy", color: .green) }
+            Section(L("Thành phần giám sát")) {
+                LabeledContent("MacSentry (app)") { StatusPill(text: L("Đang chạy"), color: .green) }
                 ForEach(ui.components, id: \.name) { c in
-                    LabeledContent(c.name) {
-                        StatusPill(text: !c.installed ? "Chưa cài" : c.running ? "Đang chạy" : "Không chạy",
+                    LabeledContent(L(c.name)) {
+                        StatusPill(text: !c.installed ? L("Chưa cài") : c.running ? L("Đang chạy") : L("Không chạy"),
                                    color: !c.installed ? .orange : c.running ? .green : .red)
                     }
                 }
-                LabeledContent("Thông báo macOS") {
-                    StatusPill(text: ui.notificationsAllowed ? "Được phép" : "Bị tắt", color: ui.notificationsAllowed ? .green : .orange)
+                LabeledContent(L("Thông báo macOS")) {
+                    StatusPill(text: ui.notificationsAllowed ? L("Được phép") : L("Bị tắt"), color: ui.notificationsAllowed ? .green : .orange)
                 }
             }
 
             Section {
                 if recent.isEmpty {
-                    Text(log.unreadable ? "Không đọc được log của daemon." : "Chưa có sự kiện đáng chú ý.").foregroundStyle(.secondary)
+                    Text(log.unreadable ? L("Không đọc được log của daemon.") : L("Chưa có sự kiện đáng chú ý.")).foregroundStyle(.secondary)
                 } else {
                     ForEach(recent) { e in
                         Button {
@@ -107,9 +107,9 @@ struct OverviewPage: View {
                 }
             } header: {
                 HStack {
-                    Text("Sự kiện đáng chú ý gần đây")
+                    Text(L("Sự kiện đáng chú ý gần đây"))
                     Spacer()
-                    Button("Xem tất cả") { ui.page = .events }.buttonStyle(.link).font(.callout)
+                    Button(L("Xem tất cả")) { ui.page = .events }.buttonStyle(.link).font(.callout)
                 }
             }
         }

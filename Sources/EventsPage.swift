@@ -48,9 +48,9 @@ struct EventsPage: View {
     var body: some View {
         Group {
             if log.unreadable && log.events.isEmpty {
-                EmptyState(icon: "doc.questionmark", title: "Không đọc được log",
-                           message: Telegram.daemonInstalled ? "Chưa có file \(Store.daemonLogPath)."
-                               : "Chưa cài macsentryd. Cài bằng lệnh: \(Store.daemonInstallCommand)")
+                EmptyState(icon: "doc.questionmark", title: L("Không đọc được log"),
+                           message: Telegram.daemonInstalled ? L("Chưa có file %@.", Store.daemonLogPath)
+                               : L("Chưa cài macsentryd. Cài bằng lệnh: %@", Store.daemonInstallCommand))
                     .safeAreaBar(edge: .bottom) { statusBar(nil) }
             } else {
                 let data = rows
@@ -77,41 +77,63 @@ struct EventsPage: View {
         }
     }
 
+    /// Thanh lọc co giãn: đủ chỗ thì nút có chữ, thiếu chỗ (cửa sổ hẹp, có thêm "Bỏ lọc") thì nút chỉ còn
+    /// icon + tooltip — không để nút bị cắt thành "Tự…"
     var filterBar: some View {
         FilterBar {
-            Picker("Mức độ", selection: $ui.eventLevel) {
-                Text("Tất cả").tag(LogEvent.Level?.none)
+            ViewThatFits(in: .horizontal) {
+                filterControls(compact: false)
+                filterControls(compact: true)
+            }
+        }
+    }
+
+    func filterControls(compact: Bool) -> some View {
+        HStack(spacing: 10) {
+            Picker(L("Mức độ"), selection: $ui.eventLevel) {
+                Text(L("Tất cả")).tag(LogEvent.Level?.none)
                 ForEach(LogEvent.Level.allCases.reversed(), id: \.self) { Text($0.title).tag(LogEvent.Level?.some($0)) }
             }
             .pickerStyle(.segmented)
             .labelsHidden()
             .fixedSize()
-            Picker("Thời gian", selection: $ui.eventRange) {
+            Picker(L("Thời gian"), selection: $ui.eventRange) {
                 ForEach(TimeRange.allCases, id: \.self) { Text($0.title).tag($0) }
             }
             .labelsHidden()
             .fixedSize()
             if filtering {
-                Button("Bỏ lọc") {
-                    ui.queries[.events] = ""; ui.eventLevel = nil; ui.eventRange = .all
-                }.buttonStyle(.link)
+                Button { ui.queries[.events] = ""; ui.eventLevel = nil; ui.eventRange = .all } label: {
+                    if compact { Image(systemName: "xmark.circle.fill") } else { Text(L("Bỏ lọc")) }
+                }
+                .buttonStyle(.link)
+                .help(L("Bỏ mọi bộ lọc và từ khoá"))
+                .fixedSize()
             }
-            Spacer()
-            Toggle(isOn: $log.live) { Label("Tự cập nhật", systemImage: "dot.radiowaves.up.forward") }
-                .toggleStyle(.button)
-                .help("Tự hiện sự kiện mới khi daemon ghi log")
-            Button { log.refresh() } label: { Image(systemName: "arrow.clockwise") }
-                .help("Tải lại ngay")
+            Spacer(minLength: 0)
+            // Cùng loại control + cùng kiểu với nút tải lại → cùng cỡ, cùng chiều cao (Toggle kiểu nút và
+            // borderedProminent đều vẽ thấp hơn). Đang bật thì tô màu nhấn
+            Button { log.live.toggle() } label: { Label { Text(L("Tự cập nhật")) } icon: { BarIcon("dot.radiowaves.up.forward") } }
+            .buttonStyle(.bordered)
+            .tint(log.live ? .accentColor : nil)
+            .labelStyle(compact ? AnyLabelStyle(.iconOnly) : AnyLabelStyle(.titleAndIcon))
+            .help(log.live ? L("Đang tự hiện sự kiện mới — bấm để tạm dừng") : L("Đã tạm dừng — bấm để tự hiện sự kiện mới"))
+            .fixedSize()
+            Button { log.refresh() } label: { Label { Text(L("Tải lại")) } icon: { BarIcon("arrow.clockwise") } }
+                .buttonStyle(.bordered)
+                .labelStyle(.iconOnly)
+                .help(L("Tải lại ngay"))
+                .fixedSize()
         }
     }
 
     func table(_ data: [LogEvent]) -> some View {
         let lastID = data.last?.id
         return Table(data, selection: $ui.selectedEvent, columnCustomization: $ui.eventColumns) {
-            TableColumn("Mức") { e in LevelIcon(level: e.level).help(e.level.title) }
-                .width(30)
+            TableColumn(L("Mức")) { e in LevelIcon(level: e.level).help(e.level.title) }
+                .width(44)      // đủ cho tiêu đề "Level" khi dùng tiếng Anh
                 .customizationID("level")
-            TableColumn("Thời gian") { e in
+            TableColumn(L("Thời gian")) { e in
                 Group {
                     if let d = e.date { DateText(date: d) } else { Text(e.time).monospacedDigit() }
                 }
@@ -122,7 +144,7 @@ struct EventsPage: View {
             .width(min: 70, ideal: 155, max: 200)
             .customizationID("time")
             // Cột cuối: không đặt độ rộng → tự lấp phần còn lại; không cho kéo mép phải / ẩn
-            TableColumn("Nội dung") { e in
+            TableColumn(L("Nội dung")) { e in
                 Text(e.text).lineLimit(1).help(e.text)
                     .fontWeight(e.level == .alert ? .medium : .regular)
             }
@@ -132,10 +154,10 @@ struct EventsPage: View {
         .tableStyle(.bordered(alternatesRowBackgrounds: true))
         .contextMenu(forSelectionType: UInt64.self) { ids in
             if let e = ids.first.flatMap(event) {
-                Button("Sao chép dòng", systemImage: "doc.on.doc") { ui.copy(e.line) }
-                Button("Sao chép nội dung", systemImage: "text.quote") { ui.copy(e.text) }
+                Button(L("Sao chép dòng"), systemImage: "doc.on.doc") { ui.copy(e.line) }
+                Button(L("Sao chép nội dung"), systemImage: "text.quote") { ui.copy(e.text) }
                 Divider()
-                Button("Lọc sự kiện cùng loại", systemImage: "line.3.horizontal.decrease") {
+                Button(L("Lọc sự kiện cùng loại"), systemImage: "line.3.horizontal.decrease") {
                     ui.queries[.events] = String(e.text.prefix { $0 != ":" && $0 != "(" }.prefix(40)).trimmingCharacters(in: .whitespaces)
                 }
             }
@@ -143,8 +165,8 @@ struct EventsPage: View {
         .onCopyCommand { selected.map { [NSItemProvider(object: $0.line as NSString)] } ?? [] }
         .overlay {
             if data.isEmpty && !log.events.isEmpty {
-                EmptyState(icon: "magnifyingglass", title: "Không có sự kiện phù hợp",
-                           message: log.hasOlder ? "Đang đọc thêm phần log cũ…" : "Thử từ khoá khác hoặc nới bộ lọc.")
+                EmptyState(icon: "magnifyingglass", title: L("Không có sự kiện phù hợp"),
+                           message: log.hasOlder ? L("Đang đọc thêm phần log cũ…") : L("Thử từ khoá khác hoặc nới bộ lọc."))
             }
         }
     }
@@ -158,8 +180,8 @@ struct EventsPage: View {
                     Text(e.level.title).font(.headline)
                     Text(e.time).monospacedDigit().foregroundStyle(.secondary)
                     Spacer()
-                    Button { ui.copy(e.line) } label: { Label("Sao chép", systemImage: "doc.on.doc") }
-                        .help("Sao chép cả dòng log (⌘C)")
+                    Button { ui.copy(e.line) } label: { Label(L("Sao chép"), systemImage: "doc.on.doc") }
+                        .help(L("Sao chép cả dòng log (⌘C)"))
                 }
                 .padding(.horizontal, 14).padding(.vertical, 8)
                 Divider()
@@ -173,7 +195,7 @@ struct EventsPage: View {
                             Grid(alignment: .leadingFirstTextBaseline, horizontalSpacing: 12, verticalSpacing: 6) {
                                 ForEach(Array(d.fields.enumerated()), id: \.offset) { _, f in
                                     GridRow {
-                                        Text(f.key)
+                                        Text(L(f.key))     // tên trường do daemon ghi (tiếng Việt)
                                             .foregroundStyle(.secondary)
                                             .gridColumnAlignment(.trailing)
                                         Text(f.value)
@@ -192,7 +214,7 @@ struct EventsPage: View {
             }
             .background(Color(nsColor: .textBackgroundColor))
         } else {
-            Text("Chọn một sự kiện để xem chi tiết")
+            Text(L("Chọn một sự kiện để xem chi tiết"))
                 .foregroundStyle(.secondary)
                 .frame(maxWidth: .infinity, maxHeight: .infinity)
                 .background(Color(nsColor: .textBackgroundColor))
@@ -201,13 +223,14 @@ struct EventsPage: View {
 
     func statusBar(_ shown: Int?) -> some View {
         StatusBar {
-            Text(filtering ? "\(shown ?? 0) / \(log.events.count) sự kiện" : "\(log.events.count) sự kiện")
+            Text(filtering ? "\(shown ?? 0) / " + Lplural("%ld sự kiện", log.events.count) : Lplural("%ld sự kiện", log.events.count))
             if log.hasOlder {
-                Text("· đã đọc \(ByteCountFormatter.string(fromByteCount: Int64(log.fileSize - log.loadedFrom), countStyle: .file)) / \(ByteCountFormatter.string(fromByteCount: Int64(log.fileSize), countStyle: .file))")
-                Button("Tải thêm cũ hơn") { log.loadOlder() }.buttonStyle(.link)
+                Text(L("· đã đọc %@ / %@", ByteCountFormatter.string(fromByteCount: Int64(log.fileSize - log.loadedFrom), countStyle: .file),
+                       ByteCountFormatter.string(fromByteCount: Int64(log.fileSize), countStyle: .file)))
+                Button(L("Tải thêm cũ hơn")) { log.loadOlder() }.buttonStyle(.link)
             }
             Spacer()
-            Button("Mở bằng Console") { NSWorkspace.shared.open(URL(fileURLWithPath: Store.daemonLogPath)) }.buttonStyle(.link)
+            Button(L("Mở bằng Console")) { NSWorkspace.shared.open(URL(fileURLWithPath: Store.daemonLogPath)) }.buttonStyle(.link)
         }
     }
 
@@ -261,4 +284,21 @@ struct EventsKey: Equatable {
 extension String {
     /// Viết hoa chữ cái đầu ("cài bởi" → "Cài bởi")
     var capitalizedFirst: String { prefix(1).uppercased() + dropFirst() }
+}
+
+/// Bọc LabelStyle để chọn kiểu nhãn lúc chạy (iconOnly / titleAndIcon)
+struct AnyLabelStyle: LabelStyle {
+    private let make: (Configuration) -> AnyView
+    init<S: LabelStyle>(_ style: S) { make = { AnyView(style.makeBody(configuration: $0)) } }
+    func makeBody(configuration: Configuration) -> some View { make(configuration) }
+}
+
+/// Icon trong nút của thanh lọc: khung cố định để mọi nút cao bằng nhau (nút bordered cao theo nội dung,
+/// ký hiệu cao như ↻ làm nút cao hơn nút bên cạnh)
+struct BarIcon: View {
+    let name: String
+    init(_ name: String) { self.name = name }
+    var body: some View {
+        Image(systemName: name).resizable().scaledToFit().frame(width: 14, height: 14)
+    }
 }

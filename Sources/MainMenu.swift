@@ -4,47 +4,48 @@ import AppKit
 // trong ô nhập liệu không hoạt động (AppKit chuyển các phím tắt này qua main menu).
 
 enum MainMenu {
+    /// Gọi lại khi đổi ngôn ngữ: dựng lại cả menu với tiêu đề mới
     static func install() {
         let main = NSMenu()
 
         let app = submenu(main, "MacSentry")
-        app.addItem(withTitle: "Giới thiệu MacSentry", action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        app.addItem(withTitle: L("Giới thiệu MacSentry"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
         app.addItem(.separator())
-        app.addItem(withTitle: "Cài đặt…", action: #selector(AppDelegate.openSettings), keyEquivalent: ",")
+        app.addItem(withTitle: L("Cài đặt…"), action: #selector(AppDelegate.openSettings), keyEquivalent: ",")
         app.addItem(.separator())
-        app.addItem(withTitle: "Ẩn MacSentry", action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
-        add(app, "Ẩn các app khác", #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
+        app.addItem(withTitle: L("Ẩn MacSentry"), action: #selector(NSApplication.hide(_:)), keyEquivalent: "h")
+        add(app, L("Ẩn các app khác"), #selector(NSApplication.hideOtherApplications(_:)), "h", [.command, .option])
 
-        let edit = submenu(main, "Sửa")
-        edit.addItem(withTitle: "Hoàn tác", action: Selector(("undo:")), keyEquivalent: "z")
-        add(edit, "Làm lại", Selector(("redo:")), "z", [.command, .shift])
+        let edit = submenu(main, L("Sửa"))
+        edit.addItem(withTitle: L("Hoàn tác"), action: Selector(("undo:")), keyEquivalent: "z")
+        add(edit, L("Làm lại"), Selector(("redo:")), "z", [.command, .shift])
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Cắt", action: #selector(NSText.cut(_:)), keyEquivalent: "x")
-        edit.addItem(withTitle: "Sao chép", action: #selector(NSText.copy(_:)), keyEquivalent: "c")
-        edit.addItem(withTitle: "Dán", action: #selector(NSText.paste(_:)), keyEquivalent: "v")
-        add(edit, "Dán và khớp kiểu", #selector(NSTextView.pasteAsPlainText(_:)), "v", [.command, .option, .shift])
-        edit.addItem(withTitle: "Xoá", action: #selector(NSText.delete(_:)), keyEquivalent: "")
-        edit.addItem(withTitle: "Chọn tất cả", action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
+        edit.addItem(withTitle: L("Cắt"), action: #selector(NSText.cut(_:)), keyEquivalent: "x")
+        edit.addItem(withTitle: L("Sao chép"), action: #selector(NSText.copy(_:)), keyEquivalent: "c")
+        edit.addItem(withTitle: L("Dán"), action: #selector(NSText.paste(_:)), keyEquivalent: "v")
+        add(edit, L("Dán và khớp kiểu"), #selector(NSTextView.pasteAsPlainText(_:)), "v", [.command, .option, .shift])
+        edit.addItem(withTitle: L("Xoá"), action: #selector(NSText.delete(_:)), keyEquivalent: "")
+        edit.addItem(withTitle: L("Chọn tất cả"), action: #selector(NSText.selectAll(_:)), keyEquivalent: "a")
         // Ctrl+A cũng chọn tất cả (quen tay từ Windows/Linux) — mục thay thế, chỉ hiện khi giữ Control
-        let ctrlA = add(edit, "Chọn tất cả", #selector(NSText.selectAll(_:)), "a", [.control])
+        let ctrlA = add(edit, L("Chọn tất cả"), #selector(NSText.selectAll(_:)), "a", [.control])
         ctrlA.isAlternate = true
         edit.addItem(.separator())
-        edit.addItem(withTitle: "Tìm…", action: #selector(AppDelegate.focusSearch(_:)), keyEquivalent: "f")
+        edit.addItem(withTitle: L("Tìm…"), action: #selector(AppDelegate.focusSearch(_:)), keyEquivalent: "f")
 
-        let view = submenu(main, "Xem")
+        let view = submenu(main, L("Xem"))
         for p in Page.allCases {
             let i = view.addItem(withTitle: p.title, action: #selector(AppDelegate.selectPage(_:)), keyEquivalent: "\(p.rawValue + 1)")
             i.tag = p.rawValue
         }
 
         view.addItem(.separator())
-        view.addItem(withTitle: "Quay lại", action: #selector(AppDelegate.goBack(_:)), keyEquivalent: "[")
-        view.addItem(withTitle: "Tiếp", action: #selector(AppDelegate.goForward(_:)), keyEquivalent: "]")
+        view.addItem(withTitle: L("Quay lại"), action: #selector(AppDelegate.goBack(_:)), keyEquivalent: "[")
+        view.addItem(withTitle: L("Tiếp"), action: #selector(AppDelegate.goForward(_:)), keyEquivalent: "]")
 
-        let window = submenu(main, "Cửa sổ")
-        window.addItem(withTitle: "Thu nhỏ", action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
-        window.addItem(withTitle: "Phóng to", action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
-        window.addItem(withTitle: "Đóng", action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
+        let window = submenu(main, L("Cửa sổ"))
+        window.addItem(withTitle: L("Thu nhỏ"), action: #selector(NSWindow.performMiniaturize(_:)), keyEquivalent: "m")
+        window.addItem(withTitle: L("Phóng to"), action: #selector(NSWindow.performZoom(_:)), keyEquivalent: "")
+        window.addItem(withTitle: L("Đóng"), action: #selector(NSWindow.performClose(_:)), keyEquivalent: "w")
         NSApp.windowsMenu = window
 
         // Biểu tượng cho các lệnh chính (macOS 26+). Không ép hiện: từ macOS 27 AppKit tự quyết có vẽ icon hay không

@@ -39,12 +39,12 @@ enum Page: Int, CaseIterable, Identifiable {
     var id: Int { rawValue }
     var title: String {
         switch self {
-        case .overview: "Tổng quan"
-        case .active: "Đang kết nối"
-        case .history: "Lịch sử kết nối"
-        case .events: "Sự kiện"
-        case .trusted: "IP tin cậy"
-        case .settings: "Cài đặt"
+        case .overview: L("Tổng quan")
+        case .active: L("Đang kết nối")
+        case .history: L("Lịch sử kết nối")
+        case .events: L("Sự kiện")
+        case .trusted: L("IP tin cậy")
+        case .settings: L("Cài đặt")
         }
     }
     var icon: String {
@@ -71,9 +71,9 @@ enum Page: Int, CaseIterable, Identifiable {
     /// nil = trang không có ô tìm kiếm trên toolbar
     var searchPrompt: String? {
         switch self {
-        case .active, .history: "Tìm IP, dịch vụ, user"
-        case .events: "Tìm sự kiện (-từ để loại trừ)"
-        case .trusted: "Tìm IP"
+        case .active, .history: L("Tìm IP, dịch vụ, user")
+        case .events: L("Tìm sự kiện (-từ để loại trừ)")
+        case .trusted: L("Tìm IP")
         case .overview, .settings: nil
         }
     }
@@ -88,7 +88,7 @@ struct Component: Hashable {
 
 enum TimeRange: Int, CaseIterable {
     case all, hour, today, week
-    var title: String { switch self { case .all: "Mọi lúc"; case .hour: "1 giờ qua"; case .today: "Hôm nay"; case .week: "7 ngày qua" } }
+    var title: String { switch self { case .all: L("Mọi lúc"); case .hour: L("1 giờ qua"); case .today: L("Hôm nay"); case .week: L("7 ngày qua") } }
     /// Mốc bắt đầu của khoảng (nil = không giới hạn) — tính một lần cho cả lượt lọc
     var cutoff: Date? {
         switch self {
@@ -155,7 +155,7 @@ final class ViewState: ObservableObject {
     @Published var settled: [Page: String] = [:]
     let telegramForm = TelegramForm()
 
-    func copy(_ text: String, _ message: String = "Đã sao chép") {
+    func copy(_ text: String, _ message: String = L("Đã sao chép")) {
         NSPasteboard.general.clearContents()
         NSPasteboard.general.setString(text, forType: .string)
         flash(message)
@@ -178,11 +178,11 @@ struct Protection {
     }
     var color: Color { !untrusted.isEmpty ? .red : !missing.isEmpty ? .orange : .green }
     var icon: String { !untrusted.isEmpty ? "exclamationmark.shield.fill" : !missing.isEmpty ? "exclamationmark.triangle.fill" : "checkmark.shield.fill" }
-    var title: String { !untrusted.isEmpty ? "Có truy cập từ IP lạ" : !missing.isEmpty ? "Bảo vệ chưa đầy đủ" : "Máy đang được bảo vệ" }
+    var title: String { !untrusted.isEmpty ? L("Có truy cập từ IP lạ") : !missing.isEmpty ? L("Bảo vệ chưa đầy đủ") : L("Máy đang được bảo vệ") }
     var detail: String {
-        !untrusted.isEmpty ? untrusted.map { "\($0.service) từ \($0.ip)" }.joined(separator: ", ")
-            : !missing.isEmpty ? missing.map { "\($0.name): \($0.installed ? "không chạy" : "chưa cài")" }.joined(separator: " · ")
-            : "Mọi thành phần giám sát đều đang chạy."
+        !untrusted.isEmpty ? untrusted.map { L("%@ từ %@", $0.serviceName, $0.ip) }.joined(separator: ", ")
+            : !missing.isEmpty ? missing.map { "\(L($0.name)): \($0.installed ? L("không chạy") : L("chưa cài"))" }.joined(separator: " · ")
+            : L("Mọi thành phần giám sát đều đang chạy.")
     }
 }
 

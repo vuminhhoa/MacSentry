@@ -14,6 +14,8 @@ struct RemoteConnection: Identifiable, Hashable {
     var user: String?
     var firstSeen: Date
     var id: String { "\(service)|\(ip):\(remotePort)" }
+    /// Tên dịch vụ để hiển thị (`service` là tên gốc, cũng là khoá nhận diện)
+    var serviceName: String { L(service) }
 }
 
 struct HistoryEntry: Codable, Identifiable, Hashable {

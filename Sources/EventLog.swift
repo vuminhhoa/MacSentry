@@ -6,7 +6,7 @@ struct LogEvent: Identifiable, Hashable {
     enum Level: Int, CaseIterable, Comparable {
         case info, notice, alert
         static func < (a: Level, b: Level) -> Bool { a.rawValue < b.rawValue }
-        var title: String { switch self { case .info: "Thông tin"; case .notice: "Chú ý"; case .alert: "Cảnh báo" } }
+        var title: String { switch self { case .info: L("Thông tin"); case .notice: L("Chú ý"); case .alert: L("Cảnh báo") } }
     }
     let id: UInt64          // vị trí byte của dòng trong file → không đổi giữa các lần tải lại
     let date: Date?

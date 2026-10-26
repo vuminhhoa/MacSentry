@@ -26,16 +26,16 @@ extension AppDelegate {
                 for (name, plist, marker) in Self.watched where FileManager.default.fileExists(atPath: plist) {
                     if ps.contains(marker) {
                         if (self.daemonMissing[name] ?? 0) >= 3 {
-                            Telegram.send("✅ \(name) đã chạy lại\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+                            Telegram.send(L("✅ %@ đã chạy lại", L(name)) + atNow(), silent: true)
                         }
                         self.daemonMissing[name] = 0
                     } else {
                         let n = (self.daemonMissing[name] ?? 0) + 1
                         self.daemonMissing[name] = n
                         if n == 3 {
-                            Telegram.send("⚠️ \(name) KHÔNG chạy (~1 phút)\nCó thể đã bị tắt bằng launchctl bootout / kill.\n"
-                                          + "Kiểm tra: sudo launchctl print system/\((plist as NSString).lastPathComponent.replacingOccurrences(of: ".plist", with: ""))\n"
-                                          + "Lúc: \(timeFmt.string(from: Date()))")
+                            let job = (plist as NSString).lastPathComponent.replacingOccurrences(of: ".plist", with: "")
+                            Telegram.send(L("⚠️ %@ KHÔNG chạy (~1 phút)", L(name)) + "\n" + L("Có thể đã bị tắt bằng launchctl bootout / kill.")
+                                          + "\n" + L("Kiểm tra: %@", "sudo launchctl print system/\(job)") + atNow())
                         }
                     }
                 }
@@ -43,17 +43,30 @@ extension AppDelegate {
         }
     }
 
+    /// Camera / micro đang bật — khoá không phụ thuộc ngôn ngữ ("📷\t<tên>", "🎙\t<app>"); câu chữ ghép lúc gửi
+    func sensorsNow() -> Set<String> {
+        Set(AVSensors.camerasInUse().map { "📷\t\($0)" } + AVSensors.micsInUse().map { "🎙\t\($0)" })
+    }
+
+    func sensorText(_ s: String) -> String {
+        let name = String(s.drop { $0 != "\t" }.dropFirst())
+        return s.hasPrefix("🎙") ? L("🎙 Micro đang được dùng bởi: %@", name) : L("📷 Camera: %@", name)
+    }
+
     func checkSensors() {
-        let now = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro đang được dùng bởi: \($0)" })
+        let now = sensorsNow()
         let front = NSWorkspace.shared.frontmostApplication?.localizedName ?? "?"
         for s in now.subtracting(sensorsInUse).sorted() {
             // Micro đã biết chính xác app; camera thì chỉ đoán theo app đang mở phía trước
-            let who = s.hasPrefix("🎙") ? "" : "\nApp đang mở phía trước: \(front)"
-            Telegram.send("\(s) — ĐANG BẬT\(who)\nLúc: \(timeFmt.string(from: Date()))")
+            let who = s.hasPrefix("🎙") ? "" : "\n" + L("App đang mở phía trước: %@", front)
+            Telegram.send(sensorText(s) + L(" — ĐANG BẬT") + who + atNow())
         }
         for s in sensorsInUse.subtracting(now).sorted() {
-            Telegram.send("\(s) — đã tắt\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+            Telegram.send(sensorText(s) + L(" — đã tắt") + atNow(), silent: true)
         }
         sensorsInUse = now
     }
 }
+
+/// Dòng "Lúc: <giờ hiện tại>" cuối tin Telegram
+func atNow() -> String { "\n" + L("Lúc: %@", timeFmt.string(from: Date())) }

@@ -1,5 +1,6 @@
 import AppKit
 import UserNotifications
+import Combine
 
 // MARK: - App delegate / status bar
 
@@ -20,6 +21,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     var sensorTimer: Timer?
     var watchdogTimer: Timer?
     var daemonMissing: [String: Int] = [:]
+    var langSub: AnyCancellable?
 
     func applicationDidFinishLaunching(_ note: Notification) {
         // Chỉ cho chạy 1 instance. Bản mở bằng Finder/`open` giao cho launchd rồi mới thoát, nên bản launchd
@@ -38,6 +40,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         LaunchAtLogin.ensure()
 
         MainMenu.install()
+        // Đổi ngôn ngữ (trong Cài đặt của app hoặc của hệ thống) → dựng lại main menu, tooltip thanh menu
+        langSub = Lang.shared.$code.dropFirst().receive(on: RunLoop.main).sink { [weak self] _ in
+            MainMenu.install()
+            self?.statusKey = ""
+            self?.refreshStatusItem()
+        }
 
         statusItem = NSStatusBar.system.statusItem(withLength: NSStatusItem.variableLength)
         let menu = NSMenu()
@@ -55,12 +63,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         monitor.onUserLogin = { [weak self] c in
             if Telegram.daemonInstalled { return }
             let mark = self?.monitor.trusted.contains(c.ip) == true ? "✅" : "⚠️"
-            Telegram.send("\(mark) Đã đăng nhập SSH\nIP: \(c.ip):\(c.remotePort)\nUser: \(c.user ?? "?")")
+            Telegram.send(L("%@ Đã đăng nhập SSH", mark) + "\nIP: \(c.ip):\(c.remotePort)\nUser: \(c.user ?? "?")")
         }
         monitor.onSessionEnd = { e in
             if Telegram.daemonInstalled { return }
-            Telegram.send("🔌 Kết thúc phiên \(e.service ?? "SSH")\nIP: \(e.ip)" + (e.user.map { "\nUser: \($0)" } ?? "")
-                          + "\nThời lượng: \(durationString(e.start, e.end ?? Date()))", silent: true)
+            Telegram.send(L("🔌 Kết thúc phiên %@", e.serviceName) + "\nIP: \(e.ip)" + (e.user.map { "\nUser: \($0)" } ?? "")
+                          + "\n" + L("Thời lượng: %@", durationString(e.start, e.end ?? Date())), silent: true)
         }
         notifyStartup()
         observeSystemEvents()
@@ -80,7 +88,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
     }
 
     // Quay lại app (vd. từ Cài đặt hệ thống) → cập nhật trạng thái quyền thông báo
-    func applicationDidBecomeActive(_ note: Notification) { refreshNotificationStatus() }
+    func applicationDidBecomeActive(_ note: Notification) { refreshNotificationStatus(); Lang.shared.resolve() }
     func windowDidBecomeKey(_ note: Notification) { refreshNotificationStatus() }
 
     func observeSystemEvents() {
@@ -89,33 +97,33 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         ws.addObserver(forName: NSWorkspace.willPowerOffNotification, object: nil, queue: .main) { [weak self] _ in
             guard let self, !self.poweringOff else { return }
             self.poweringOff = true
-            if !Telegram.daemonInstalled { Telegram.send("🔴 Máy đang tắt / khởi động lại / đăng xuất\nLúc: \(timeFmt.string(from: Date()))", wait: true) }
+            if !Telegram.daemonInstalled { Telegram.send(L("🔴 Máy đang tắt / khởi động lại / đăng xuất") + atNow(), wait: true) }
             if self.alertShowing { NSApp.abortModal() } // popup đang mở thì đóng, để không chặn việc tắt máy
         }
         // Ngủ / thức dậy. Lúc ngủ chờ gửi xong (mạng sắp bị ngắt); lúc thức mạng chưa sẵn sàng thì Telegram.send tự thử lại
         ws.addObserver(forName: NSWorkspace.willSleepNotification, object: nil, queue: .main) { [weak self] _ in
             self?.sleptAt = Date()
-            Telegram.send("😴 Máy đi ngủ\nLúc: \(timeFmt.string(from: Date()))", silent: true, wait: true)
+            Telegram.send(L("😴 Máy đi ngủ") + atNow(), silent: true, wait: true)
         }
         ws.addObserver(forName: NSWorkspace.didWakeNotification, object: nil, queue: .main) { [weak self] _ in
-            let slept = self?.sleptAt.map { "\nĐã ngủ: \(durationString($0, Date()))" } ?? ""
+            let slept = self?.sleptAt.map { "\n" + L("Đã ngủ: %@", durationString($0, Date())) } ?? ""
             self?.sleptAt = nil
             if Telegram.daemonInstalled { return }
-            Telegram.send("☀️ Máy thức dậy\nLúc: \(timeFmt.string(from: Date()))\(slept)")
+            Telegram.send(L("☀️ Máy thức dậy") + atNow() + slept)
         }
         // Khoá / mở khoá màn hình (tin im lặng: xảy ra nhiều lần mỗi ngày)
         let dn = DistributedNotificationCenter.default()
         dn.addObserver(forName: .init("com.apple.screenIsLocked"), object: nil, queue: .main) { _ in
-            Telegram.send("🔒 Màn hình đã khoá\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+            Telegram.send(L("🔒 Màn hình đã khoá") + atNow(), silent: true)
         }
         dn.addObserver(forName: .init("com.apple.screenIsUnlocked"), object: nil, queue: .main) { _ in
             // Mở khoá lúc 0h–6h sáng là bất thường → có chuông
             let night = Calendar.current.component(.hour, from: Date()) < 6
-            Telegram.send("\(night ? "🌙 Máy được mở khoá lúc NỬA ĐÊM" : "🔓 Màn hình được mở khoá") (\(NSUserName()))\nLúc: \(timeFmt.string(from: Date()))",
+            Telegram.send("\(night ? L("🌙 Máy được mở khoá lúc NỬA ĐÊM") : L("🔓 Màn hình được mở khoá")) (\(NSUserName()))" + atNow(),
                           silent: !night)
         }
         // Camera / micro bật-tắt: CoreAudio / CoreMediaIO báo ngay khi đổi; quét dự phòng mỗi 30 giây
-        sensorsInUse = Set(AVSensors.camerasInUse().map { "📷 Camera: \($0)" } + AVSensors.micsInUse().map { "🎙 Micro đang được dùng bởi: \($0)" })
+        sensorsInUse = sensorsNow()
         AVSensors.observe { [weak self] in self?.checkSensors() }
         let t = Timer(timeInterval: 30, repeats: true) { [weak self] _ in self?.checkSensors() }
         t.tolerance = 5
@@ -140,16 +148,17 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
 
     /// Lần chạy đầu tiên sau khi bật máy → báo "máy vừa khởi động"/"đã đăng nhập", còn lại → báo app khởi động lại
     func notifyStartup() {
-        guard let boot = Self.bootTime() else { Telegram.send("▶️ MacSentry đã khởi động"); return }
+        guard let boot = Self.bootTime() else { Telegram.send(L("▶️ MacSentry đã khởi động")); return }
         let last = UserDefaults.standard.double(forKey: "lastBootTime")
         UserDefaults.standard.set(boot.timeIntervalSince1970, forKey: "lastBootTime")
         let newBoot = abs(last - boot.timeIntervalSince1970) > 1
         if newBoot && Telegram.daemonInstalled {
-            Telegram.send("👤 \(NSUserName()) đã đăng nhập máy\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+            Telegram.send(L("👤 %@ đã đăng nhập máy", NSUserName()) + atNow(), silent: true)
         } else if newBoot {
-            Telegram.send("🟢 Máy vừa khởi động\nBật lúc: \(timeFmt.string(from: boot))\nĐăng nhập: \(NSUserName()) lúc \(timeFmt.string(from: Date()))")
+            Telegram.send(L("🟢 Máy vừa khởi động") + "\n" + L("Bật lúc: %@", timeFmt.string(from: boot))
+                          + "\n" + L("Đăng nhập: %@ lúc %@", NSUserName(), timeFmt.string(from: Date())))
         } else {
-            Telegram.send("▶️ MacSentry đã khởi động lại (máy bật từ \(timeFmt.string(from: boot)))", silent: true)
+            Telegram.send(L("▶️ MacSentry đã khởi động lại (máy bật từ %@)", timeFmt.string(from: boot)), silent: true)
         }
     }
 
@@ -161,12 +170,12 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         let systemReasons: [OSType] = [OSType(kAELogOut), OSType(kAEReallyLogOut), OSType(kAEShowRestartDialog),
                                        OSType(kAEShowShutdownDialog), OSType(kAERestart), OSType(kAEShutDown)]
         if let reason, systemReasons.contains(reason) { poweringOff = true; return .terminateNow }
-        Telegram.send("⛔️ Có lệnh thoát MacSentry — đã chặn\nLúc: \(timeFmt.string(from: Date()))", silent: true)
+        Telegram.send(L("⛔️ Có lệnh thoát MacSentry — đã chặn") + atNow(), silent: true)
         return .terminateCancel
     }
 
     func applicationWillTerminate(_ note: Notification) {
-        if !poweringOff { Telegram.send("⏹ MacSentry (app) đã bị tắt", wait: true) }
+        if !poweringOff { Telegram.send(L("⏹ MacSentry (app) đã bị tắt"), wait: true) }
         Monitor.stopHelper()
     }
 }
