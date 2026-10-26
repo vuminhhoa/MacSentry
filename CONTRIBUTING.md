@@ -70,6 +70,9 @@ keep it reasonable, `.github/workflows/codeql.yml`:
   still has to be measured;
 - builds only the runner's own architecture (no `ARCHS`).
 
+In both workflows, a new push to the same branch or pull request cancels the run still in progress. The
+scheduled CodeQL run has its own concurrency group, so pushes never cancel it.
+
 Keep these when you change the workflow. GitHub's advice is in
 [Code scanning analysis takes too long](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/analysis-takes-too-long)
 and [CodeQL code scanning for compiled languages](https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages).

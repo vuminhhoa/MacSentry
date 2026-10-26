@@ -23,6 +23,12 @@ on:
 permissions:
   contents: read
 
+# A new push to the same branch or pull request cancels the analysis still in progress. The event is part of the
+# group so that a push never cancels the weekly scheduled run
+concurrency:
+  group: ${{ github.workflow }}-${{ github.event_name }}-${{ github.ref }}
+  cancel-in-progress: true
+
 jobs:
   analyze:
     name: Analyze (${{ matrix.language }})

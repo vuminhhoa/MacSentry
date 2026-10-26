@@ -9,9 +9,10 @@ on:
 permissions:
   contents: read
 
+# A new push to the same branch or pull request cancels the run still in progress: only the latest commit matters
 concurrency:
   group: ${{ github.workflow }}-${{ github.ref }}
-  cancel-in-progress: ${{ github.event_name == 'pull_request' }}
+  cancel-in-progress: true
 
 jobs:
   build:
