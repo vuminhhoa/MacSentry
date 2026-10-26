@@ -20,8 +20,9 @@ It is built for people who look after their own Mac, or a few machines, and want
 changes without running a full EDR stack.
 
 > [!NOTE]
-> The app interface and alert messages are currently in Vietnamese. English localization is planned, and
-> help with it is welcome (see [Contributing](CONTRIBUTING.md)).
+> The app is available in English and Vietnamese (it follows the system language, or pick one in Settings).
+> Telegram alerts from the daemon are still in Vietnamese; help translating them is welcome (see
+> [Contributing](CONTRIBUTING.md)).
 
 <p align="center">
   <img src="docs/images/overview.png" alt="MacSentry overview: every monitoring component running" width="820">

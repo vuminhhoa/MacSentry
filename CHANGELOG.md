@@ -7,6 +7,11 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Added
+
+- English localization of the app, alongside Vietnamese. The language follows the system by default and can be
+  changed in Settings without restarting the app. Telegram alerts from the daemon are still in Vietnamese.
+
 ## [1.0.0] - 2026-10-24
 
 First public release.

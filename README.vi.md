@@ -41,7 +41,8 @@ người tự lo máy Mac của mình (hoặc vài máy) và muốn biết khi c
 Danh sách đầy đủ (tiếng Anh): [docs/detections.md](docs/detections.md).
 
 > [!NOTE]
-> Giao diện app và nội dung cảnh báo hiện bằng tiếng Việt.
+> App có giao diện tiếng Việt và tiếng Anh (theo ngôn ngữ hệ thống, hoặc chọn trong Cài đặt). Cảnh báo Telegram
+> từ daemon hiện vẫn bằng tiếng Việt.
 
 ## Ảnh chụp
 
