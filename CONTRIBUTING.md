@@ -65,9 +65,10 @@ keep it reasonable, `.github/workflows/codeql.yml`:
 
 - runs on push and pull requests only when Swift or Python code, `build.sh` or a workflow changes, and the
   weekly scheduled run still covers everything;
-- builds with `SWIFT_OPT=-Onone`: with `-O`, `swiftc` compiles each module in a single process, so the
-  extractor can't run in parallel. This is our own reasoning, not something GitHub documents, and the gain
-  still has to be measured;
+- builds with `SWIFT_OPT=-Onone`, which the analysis doesn't need. This is our own choice, not something GitHub
+  documents, and the gain is small: the build step went from about 26 to 22 minutes. Under the CodeQL tracer
+  the build reports `x86_64` on the arm64 runner, so it most likely runs under Rosetta; that, not the
+  optimization level, seems to be where most of the time goes;
 - builds only the runner's own architecture (no `ARCHS`).
 
 In both workflows, a new push to the same branch or pull request cancels the run still in progress. The
