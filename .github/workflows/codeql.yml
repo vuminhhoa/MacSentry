@@ -2,7 +2,7 @@ name: CodeQL
 
 on:
   # The Swift analysis takes ~25 minutes: run it only when code, build.sh or a workflow changes. The weekly
-  # schedule covers the rest
+  # schedule covers the rest. See "CI" in CONTRIBUTING.md before changing this or the build step
   push:
     branches: [main]
     paths:

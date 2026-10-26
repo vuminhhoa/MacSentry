@@ -54,7 +54,25 @@ changes by hand:
 - **App**: install with `./build.sh` and exercise the pages you changed.
 - **Shell scripts**: run `shellcheck build.sh uninstall.sh daemon/*.sh` (CI uses ShellCheck 0.11).
 
+### CI
+
 CI builds every pull request for Apple silicon and Intel, runs ShellCheck and actionlint, and runs CodeQL.
+
+The CodeQL analysis of the Swift code is the slow part: it has to watch a real build on a macOS runner, and
+it took about 25 minutes with the release build. There is no build-free mode for Swift, and cached or
+incremental builds don't help, because CodeQL only analyzes the files it sees being compiled in that run. To
+keep it reasonable, `.github/workflows/codeql.yml`:
+
+- runs on push and pull requests only when Swift or Python code, `build.sh` or a workflow changes, and the
+  weekly scheduled run still covers everything;
+- builds with `SWIFT_OPT=-Onone`: with `-O`, `swiftc` compiles each module in a single process, so the
+  extractor can't run in parallel. This is our own reasoning, not something GitHub documents, and the gain
+  still has to be measured;
+- builds only the runner's own architecture (no `ARCHS`).
+
+Keep these when you change the workflow. GitHub's advice is in
+[Code scanning analysis takes too long](https://docs.github.com/en/code-security/reference/code-scanning/troubleshoot-analysis-errors/analysis-takes-too-long)
+and [CodeQL code scanning for compiled languages](https://docs.github.com/en/code-security/code-scanning/creating-an-advanced-setup-for-code-scanning/codeql-code-scanning-for-compiled-languages).
 
 ## Pull requests
 
@@ -73,9 +91,14 @@ CI builds every pull request for Apple silicon and Intel, runs ShellCheck and ac
 
 ## Translations
 
-The app interface and alerts are currently in Vietnamese only. Moving the strings to String Catalogs
-(`.xcstrings`) and adding English is the most valuable translation work right now; please open an issue before
-starting so the work can be split sensibly.
+The app is available in Vietnamese and English. Vietnamese is the development language: strings in the source
+are Vietnamese and double as lookup keys for `L(...)` and `Lplural(...)` (see `Sources/Localization.swift`).
+English translations live in `Resources/en.lproj/Localizable.strings`, and `build.sh` checks them with
+`plutil -lint` before bundling them. For a string with a count, add the singular form under `"<key>#one"`.
+
+To add a language, create `Resources/<code>.lproj/Localizable.strings`, add the code to `Lang.supported`, to
+`AppLanguage` and to `CFBundleLocalizations` in `build.sh`. Telegram alerts from the daemon are still in
+Vietnamese only; please open an issue before translating them so the work can be split sensibly.
 
 ## License
 
