@@ -75,6 +75,9 @@ Keep rules as narrow as possible: anything that matches is no longer reported.
 0600), the connection history and the trusted IP list. You can edit the Telegram settings and trusted IPs from
 the app.
 
+`update.command` in the same folder is written by **Settings → Updates → Update…** and opened in Terminal.
+The update check itself is stored in the app's defaults (`autoCheckUpdates`, `lastUpdateCheck`).
+
 ## Environment variables for development
 
 The daemon reads these so it can run unprivileged against test data:

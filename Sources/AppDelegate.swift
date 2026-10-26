@@ -74,6 +74,7 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         observeSystemEvents()
         checkDaemons()
         monitor.start()
+        Updater.shared.start()
     }
 
     /// Đọc lại quyền thông báo từ hệ thống — người dùng có thể bật/tắt trong Cài đặt bất cứ lúc nào

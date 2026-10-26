@@ -11,6 +11,10 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 - English localization of the app, alongside Vietnamese. The language follows the system by default and can be
   changed in Settings without restarting the app. Telegram alerts from the daemon are still in Vietnamese.
+- Update check. The app looks for a newer GitHub release once a day (can be turned off in Settings), notifies
+  once per version and shows it in the menu bar menu. **MacSentry → Check for Updates…** checks on demand, and
+  **Update…** in Settings opens Terminal to run `git pull --ff-only && ./build.sh && sudo ./daemon/install.sh`
+  in the source folder. The app never downloads or replaces binaries by itself.
 
 ## [1.0.0] - 2026-10-24
 

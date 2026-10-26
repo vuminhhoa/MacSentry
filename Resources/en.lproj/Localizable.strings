@@ -87,6 +87,25 @@
 "Đã lưu cấu hình Telegram" = "Telegram Settings Saved";
 "🔔 Tin nhắn thử từ MacSentry" = "🔔 Test message from MacSentry";
 "Đã gửi — kiểm tra Telegram" = "Sent — check Telegram";
+
+/* Cập nhật */
+"Cập nhật" = "Updates";
+"Phiên bản" = "Version";
+"Mới nhất" = "Up to Date";
+"Có bản %@" = "%@ Available";
+"Không kiểm tra được" = "Check Failed";
+"Bản mới: %@" = "New Version: %@";
+"Ghi chú phát hành" = "Release Notes";
+"Cập nhật…" = "Update…";
+"Không tìm thấy thư mục mã nguồn — mở trang phát hành" = "Source folder not found — opens the release page";
+"Tự kiểm tra hằng ngày" = "Check Automatically Every Day";
+"Kiểm tra lần cuối: %@" = "Last checked: %@";
+"Kiểm tra ngay" = "Check Now";
+"MacSentry build từ mã nguồn: nút Cập nhật mở Terminal chạy %@" = "MacSentry is built from source: Update opens Terminal and runs %@";
+"Có bản cập nhật MacSentry %@" = "MacSentry %@ Is Available";
+"Bạn đang dùng %@. Bấm để xem và cập nhật." = "You have %@. Click to review and update.";
+"Có bản cập nhật %@…" = "Update to %@ Available…";
+"Kiểm tra bản cập nhật…" = "Check for Updates…";
 "Gửi thất bại — kiểm tra token, chat ID, mạng" = "Failed — check the token, chat ID and network";
 
 /* Bảng kết nối / lịch sử */

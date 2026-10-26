@@ -52,6 +52,10 @@ extension AppDelegate {
                                 action: nil, keyEquivalent: "")
         menu.addItem(daemon)
         menu.addItem(item(L("Cài đặt Chia sẻ (Remote Login)…"), #selector(openSharing), ""))
+        if let r = Updater.shared.available {
+            menu.addItem(.separator())
+            menu.addItem(item(L("Có bản cập nhật %@…", r.version), #selector(openSettings), ""))
+        }
     }
 
     func item(_ title: String, _ sel: Selector, _ key: String) -> NSMenuItem {
@@ -69,6 +73,10 @@ extension AppDelegate {
 
     @objc func openWindow() { showWindow(nil) }
     @objc func openSettings() { showWindow(.settings) }
+    @objc func checkForUpdates() {
+        showWindow(.settings)
+        Updater.shared.check(manual: true)
+    }
 
     /// Mở cửa sổ chính. Khi cửa sổ mở, app tạm hiện như app thường (Dock, ⌘Tab, thanh menu với Sửa/Xem/Cửa sổ);
     /// đóng cửa sổ thì trở lại chỉ còn biểu tượng trên thanh menu.

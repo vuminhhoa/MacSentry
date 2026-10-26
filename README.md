@@ -122,6 +122,9 @@ To change the daemon's bot or heartbeat later, run `sudo ./daemon/install.sh --r
 
 ### Updating
 
+The app checks GitHub for a new release once a day and notifies you. **Settings → Updates → Update…** opens
+Terminal and runs the commands below in the source folder; you can also run them yourself:
+
 ```sh
 git pull
 ./build.sh && sudo ./daemon/install.sh

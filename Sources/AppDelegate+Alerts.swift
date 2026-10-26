@@ -60,7 +60,8 @@ extension AppDelegate {
 
     func userNotificationCenter(_ center: UNUserNotificationCenter, didReceive r: UNNotificationResponse,
                                 withCompletionHandler h: @escaping () -> Void) {
-        DispatchQueue.main.async { self.openWindow() }
+        let update = r.notification.request.identifier == Updater.notificationID
+        DispatchQueue.main.async { self.showWindow(update ? .settings : nil) }
         h()
     }
 }

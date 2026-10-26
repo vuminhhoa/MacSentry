@@ -10,6 +10,7 @@ enum MainMenu {
 
         let app = submenu(main, "MacSentry")
         app.addItem(withTitle: L("Giới thiệu MacSentry"), action: #selector(NSApplication.orderFrontStandardAboutPanel(_:)), keyEquivalent: "")
+        app.addItem(withTitle: L("Kiểm tra bản cập nhật…"), action: #selector(AppDelegate.checkForUpdates), keyEquivalent: "")
         app.addItem(.separator())
         app.addItem(withTitle: L("Cài đặt…"), action: #selector(AppDelegate.openSettings), keyEquivalent: ",")
         app.addItem(.separator())
@@ -50,7 +51,7 @@ enum MainMenu {
 
         // Biểu tượng cho các lệnh chính (macOS 26+). Không ép hiện: từ macOS 27 AppKit tự quyết có vẽ icon hay không
         let icons: [Selector: String] = [
-            #selector(AppDelegate.openSettings): "gearshape",
+            #selector(AppDelegate.openSettings): "gearshape", #selector(AppDelegate.checkForUpdates): "arrow.triangle.2.circlepath",
             Selector(("undo:")): "arrow.uturn.backward", Selector(("redo:")): "arrow.uturn.forward",
             #selector(NSText.cut(_:)): "scissors", #selector(NSText.copy(_:)): "doc.on.doc",
             #selector(NSText.paste(_:)): "doc.on.clipboard", #selector(NSText.delete(_:)): "delete.left",

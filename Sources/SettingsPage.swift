@@ -17,6 +17,7 @@ struct SettingsPage: View {
     @ObservedObject var ui: ViewState
     @ObservedObject var form: TelegramForm
     @ObservedObject var lang = Lang.shared
+    @ObservedObject var updater = Updater.shared
 
     static let installCommand = Store.daemonInstallCommand
 
@@ -85,6 +86,45 @@ struct SettingsPage: View {
                                 .buttonStyle(.borderless).help(L("Sao chép lệnh"))
                         }
                     }
+                }
+
+                Section {
+                    LabeledContent(L("Phiên bản")) {
+                        HStack {
+                            switch updater.state {
+                            case .checking: ProgressView().controlSize(.small)
+                            case .upToDate: StatusPill(text: L("Mới nhất"), color: .green)
+                            case .available(let r): StatusPill(text: L("Có bản %@", r.version), color: .orange)
+                            case .failed: StatusPill(text: L("Không kiểm tra được"), color: .red)
+                            case .idle: EmptyView()
+                            }
+                            Text(Updater.currentVersion).monospacedDigit()
+                        }
+                    }
+                    if let r = updater.available {
+                        LabeledContent(L("Bản mới: %@", r.version)) {
+                            HStack {
+                                Button(L("Ghi chú phát hành")) { NSWorkspace.shared.open(r.htmlURL) }
+                                Button(L("Cập nhật…"), action: updater.runUpdate).buttonStyle(.borderedProminent)
+                                    .help(Updater.sourceDir == nil ? L("Không tìm thấy thư mục mã nguồn — mở trang phát hành") : Updater.updateCommand)
+                            }
+                        }
+                    }
+                    Toggle(L("Tự kiểm tra hằng ngày"), isOn: $updater.automatic)
+                    HStack {
+                        if case .failed(let why) = updater.state {
+                            Text(why).foregroundStyle(.red).lineLimit(2)
+                        } else if let d = updater.lastCheck {
+                            Text(L("Kiểm tra lần cuối: %@", timeFmt.string(from: d))).foregroundStyle(.secondary)
+                        }
+                        Spacer()
+                        Button(L("Kiểm tra ngay")) { updater.check(manual: true) }
+                    }
+                } header: {
+                    Text(L("Cập nhật"))
+                } footer: {
+                    Text(L("MacSentry build từ mã nguồn: nút Cập nhật mở Terminal chạy %@", Updater.updateCommand))
+                        .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
 
                 Section("macOS") {

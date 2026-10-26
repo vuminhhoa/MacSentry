@@ -97,7 +97,8 @@ cd MacSentry
 > Nếu keychain có chứng chỉ Apple Development, `build.sh` sẽ ký bằng chứng chỉ đó để macOS giữ quyền Mạng cục bộ và
 > Full Disk Access qua các lần build. Không có thì binary được ký ad-hoc, và phải cấp lại quyền sau mỗi lần build.
 
-**Cập nhật**: `git pull && ./build.sh && sudo ./daemon/install.sh`
+**Cập nhật**: `git pull && ./build.sh && sudo ./daemon/install.sh`. App tự kiểm tra bản phát hành mới trên GitHub
+mỗi ngày và báo khi có; nút **Cài đặt › Cập nhật › Cập nhật…** mở Terminal chạy sẵn các lệnh này trong thư mục mã nguồn.
 
 **Gỡ cài đặt**: `./uninstall.sh` (gỡ daemon và app, giữ dữ liệu và log) hoặc `./uninstall.sh --purge` (xoá cả lịch sử,
 IP tin cậy, cấu hình Telegram). Log `/var/log/macsentry.log` có cờ chỉ-ghi-thêm. Muốn xoá thì chạy
