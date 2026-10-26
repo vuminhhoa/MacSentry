@@ -7,6 +7,8 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.1.0] - 2026-10-26
+
 ### Added
 
 - English localization of the app, alongside Vietnamese. The language follows the system by default and can be
@@ -49,5 +51,6 @@ First public release.
 - The daemon masks Telegram bot tokens and secret values (`TOKEN=`, `PASSWORD:`...) in everything it writes to
   its world-readable log and sends to Telegram, including process command lines.
 
-[Unreleased]: https://github.com/vuminhhoa/macsentry/compare/v1.0.0...HEAD
+[Unreleased]: https://github.com/vuminhhoa/macsentry/compare/v1.1.0...HEAD
+[1.1.0]: https://github.com/vuminhhoa/macsentry/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/vuminhhoa/macsentry/releases/tag/v1.0.0
