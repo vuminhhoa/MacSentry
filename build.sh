@@ -5,6 +5,7 @@
 # Biến môi trường:
 #   ARCHS="arm64 x86_64"   kiến trúc cần build (mặc định: kiến trúc của máy đang build)
 #   SIGN_ID="..."          danh tính ký mã (mặc định: chứng chỉ "Apple Development" đầu tiên, không có thì ký ad-hoc)
+#   SWIFT_OPT=-Onone       mức tối ưu của swiftc (mặc định -O; CodeQL dùng -Onone cho nhanh)
 set -euo pipefail
 cd "$(dirname "$0")"
 
@@ -12,7 +13,7 @@ INSTALL=1
 for arg in "$@"; do
   case $arg in
     --no-install) INSTALL=0 ;;
-    -h|--help) sed -n '2,7p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
+    -h|--help) sed -n '2,8p' "$0" | sed 's/^# \{0,1\}//'; exit 0 ;;
     *) echo "Tham số không hợp lệ: $arg" >&2; exit 2 ;;
   esac
 done
@@ -21,6 +22,7 @@ BUNDLE_ID=io.github.vuminhhoa.macsentry
 VERSION=$(tr -d '[:space:]' < VERSION)
 BUILD_NUMBER=$(git rev-list --count HEAD 2>/dev/null || echo 1)
 MACOS_MIN=26.0
+SWIFT_OPT=${SWIFT_OPT:--O}
 read -r -a ARCH_LIST <<< "${ARCHS:-$(uname -m)}"
 APP="build/MacSentry.app"
 rm -rf build && mkdir -p "$APP/Contents/MacOS" "$APP/Contents/Resources" build/obj
@@ -30,7 +32,7 @@ compile() {
   local out=$1; shift
   local parts=()
   for arch in "${ARCH_LIST[@]}"; do
-    swiftc -O -target "$arch-apple-macos$MACOS_MIN" -o "build/obj/$(basename "$out")-$arch" "$@"
+    swiftc "$SWIFT_OPT" -target "$arch-apple-macos$MACOS_MIN" -o "build/obj/$(basename "$out")-$arch" "$@"
     parts+=("build/obj/$(basename "$out")-$arch")
   done
   lipo -create -output "$out" "${parts[@]}"

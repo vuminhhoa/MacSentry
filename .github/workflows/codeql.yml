@@ -1,9 +1,21 @@
 name: CodeQL
 
 on:
+  # The Swift analysis takes ~25 minutes: run it only when code, build.sh or a workflow changes. The weekly
+  # schedule covers the rest
   push:
     branches: [main]
+    paths:
+      - "**/*.swift"
+      - "**/*.py"
+      - build.sh
+      - ".github/workflows/**"
   pull_request:
+    paths:
+      - "**/*.swift"
+      - "**/*.py"
+      - build.sh
+      - ".github/workflows/**"
   schedule:
     - cron: "27 3 * * 1"
   workflow_dispatch:
@@ -43,7 +55,7 @@ jobs:
 
       - if: matrix.build-mode == 'manual'
         name: Build
-        run: SIGN_ID=- ./build.sh --no-install
+        run: SIGN_ID=- SWIFT_OPT=-Onone ./build.sh --no-install   # the extractor is much slower with -O
 
       - uses: github/codeql-action/analyze@9b3254085494b55a0f7c4c2b3d2d52cc712ce370 # v4.39.1
         with:
