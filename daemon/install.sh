@@ -2,7 +2,18 @@
 # Cài macsentryd (LaunchDaemon chạy bằng root) + helper Endpoint Security macsentry-es.
 # Chạy: ./build.sh rồi sudo ./daemon/install.sh
 #   --reconfigure  nhập lại bot Telegram riêng cho daemon và URL heartbeat (mặc định giữ /etc/macsentry.conf cũ)
+#   --auto         không hỏi gì (app gọi khi cài / cập nhật): lần đầu dùng chung bot của app, không heartbeat, bật exec.
+#                  Tự bật khi không có terminal. Cấu hình cũ chưa có token mà app đã có Telegram → điền token của app.
 set -euo pipefail
+RECONFIGURE=0; AUTO=0
+for arg in "$@"; do
+  case $arg in
+    --reconfigure) RECONFIGURE=1 ;;
+    --auto) AUTO=1 ;;
+    *) echo "Tham số không hợp lệ: $arg" >&2; exit 2 ;;
+  esac
+done
+[ -t 0 ] || AUTO=1
 [ "$(id -u)" = 0 ] || { echo "Cần quyền root: sudo $0"; exit 1; }
 cd "$(dirname "$0")"
 LABEL=io.github.vuminhhoa.macsentry.daemon
@@ -15,7 +26,22 @@ SRC_CONF="${TARGET_HOME:-/var/root}/Library/Application Support/MacSentry/telegr
 for b in "$ES_BIN" "$DAEMON_BIN"; do [ -x "$b" ] || { echo "Chưa có $b — chạy ./build.sh trước (không cần sudo)"; exit 1; }; done
 
 # ---- cấu hình: giữ file cũ (có thể đã có HEARTBEAT_URL, token riêng) trừ khi --reconfigure
-if [ ! -f /etc/macsentry.conf ] || [ "${1:-}" = --reconfigure ]; then
+app_telegram() { # đọc token và chat của app (rỗng nếu app chưa cấu hình Telegram)
+  APP_TOKEN=""; CHAT=""
+  [ -f "$SRC_CONF" ] || return 0
+  APP_TOKEN=$(plutil -extract botToken raw -o - "$SRC_CONF" 2>/dev/null || true)
+  CHAT=$(plutil -extract chatId raw -o - "$SRC_CONF" 2>/dev/null || true)
+}
+if [ "$AUTO" = 1 ]; then
+  app_telegram
+  if [ ! -f /etc/macsentry.conf ]; then
+    # Chưa có Telegram thì daemon vẫn chạy và ghi log; app cài lại sau khi lưu Telegram
+    ( umask 077; printf 'TOKEN=%s\nCHAT=%s\nHEARTBEAT_URL=\nES_EXEC=1\nFIM=auto\n' "$APP_TOKEN" "$CHAT" > /etc/macsentry.conf )
+  elif [ -n "$APP_TOKEN" ] && [[ "$APP_TOKEN$CHAT" =~ ^[A-Za-z0-9:_-]+$ ]] && grep -q '^TOKEN=$' /etc/macsentry.conf; then
+    # Token / chat ID hợp lệ chỉ gồm chữ, số, : _ - (đã kiểm ở trên) → dùng an toàn trong sed
+    sed -i '' -e "s|^TOKEN=\$|TOKEN=$APP_TOKEN|" -e "s|^CHAT=.*|CHAT=$CHAT|" /etc/macsentry.conf
+  fi
+elif [ ! -f /etc/macsentry.conf ] || [ "$RECONFIGURE" = 1 ]; then
   [ -f "$SRC_CONF" ] || { echo "Chưa có $SRC_CONF — mở MacSentry.app → Cài đặt để nhập bot Telegram trước"; exit 1; }
   APP_TOKEN=$(plutil -extract botToken raw -o - "$SRC_CONF")
   CHAT=$(plutil -extract chatId raw -o - "$SRC_CONF")

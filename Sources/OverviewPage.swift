@@ -80,6 +80,7 @@ struct OverviewPage: View {
                                    color: !c.installed ? .orange : c.running ? .green : .red)
                     }
                 }
+                if ui.components.contains(where: { !$0.installed || !$0.running }) { DaemonInstallRow(ui: ui) }
                 LabeledContent(L("Thông báo macOS")) {
                     StatusPill(text: ui.notificationsAllowed ? L("Được phép") : L("Bị tắt"), color: ui.notificationsAllowed ? .green : .orange)
                 }

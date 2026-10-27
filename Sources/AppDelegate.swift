@@ -75,6 +75,8 @@ final class AppDelegate: NSObject, NSApplicationDelegate, UNUserNotificationCent
         checkDaemons()
         monitor.start()
         Updater.shared.start()
+        // Cài mới: daemon chưa có thì tự cài luôn (đợi chút để menu bar hiện trước hộp thoại mật khẩu)
+        DispatchQueue.main.asyncAfter(deadline: .now() + 3) { DaemonInstaller.shared.autoInstallIfNeeded() }
     }
 
     /// Đọc lại quyền thông báo từ hệ thống — người dùng có thể bật/tắt trong Cài đặt bất cứ lúc nào

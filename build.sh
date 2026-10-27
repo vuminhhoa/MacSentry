@@ -1,6 +1,6 @@
 #!/bin/bash
 # Build MacSentry.app, macsentryd và macsentry-es; mặc định cài app vào ~/Applications và chạy.
-#   ./build.sh               build + cài app (daemon cài riêng: sudo ./daemon/install.sh)
+#   ./build.sh               build + cài app (app tự cài daemon khi mở lần đầu, hỏi mật khẩu quản trị)
 #   ./build.sh --no-install  chỉ build vào build/ (dùng cho CI)
 # Biến môi trường:
 #   ARCHS="arm64 x86_64"   kiến trúc cần build (mặc định: kiến trúc của máy đang build)
