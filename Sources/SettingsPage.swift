@@ -18,8 +18,7 @@ struct SettingsPage: View {
     @ObservedObject var form: TelegramForm
     @ObservedObject var lang = Lang.shared
     @ObservedObject var updater = Updater.shared
-
-    static let installCommand = Store.daemonInstallCommand
+    @ObservedObject var installer = DaemonInstaller.shared
 
     var dirty: Bool { form.token != (Telegram.config?.botToken ?? "") || form.chatId != (Telegram.config?.chatId ?? "") }
     var valid: Bool { !form.token.trimmingCharacters(in: .whitespaces).isEmpty && !form.chatId.trimmingCharacters(in: .whitespaces).isEmpty }
@@ -79,13 +78,7 @@ struct SettingsPage: View {
                                        color: !c.installed ? .orange : c.running ? .green : .red)
                         }
                     }
-                    LabeledContent(L("Cài / cập nhật daemon")) {
-                        HStack {
-                            Text(Self.installCommand).font(.system(.body, design: .monospaced)).textSelection(.enabled)
-                            Button { ui.copy(Self.installCommand, L("Đã sao chép lệnh")) } label: { Image(systemName: "doc.on.doc") }
-                                .buttonStyle(.borderless).help(L("Sao chép lệnh"))
-                        }
-                    }
+                    DaemonInstallRow(ui: ui)
                 }
 
                 Section {
@@ -104,10 +97,18 @@ struct SettingsPage: View {
                     if let r = updater.available {
                         LabeledContent(L("Bản mới: %@", r.version)) {
                             HStack {
-                                Button(L("Ghi chú phát hành")) { NSWorkspace.shared.open(r.htmlURL) }
-                                Button(L("Cập nhật…"), action: updater.runUpdate).buttonStyle(.borderedProminent)
-                                    .help(Updater.sourceDir == nil ? L("Không tìm thấy thư mục mã nguồn — mở trang phát hành") : Updater.updateCommand)
+                                if let step = updater.step {
+                                    ProgressView().controlSize(.small)
+                                    Text(step).foregroundStyle(.secondary)
+                                } else {
+                                    Button(L("Ghi chú phát hành")) { NSWorkspace.shared.open(r.htmlURL) }
+                                    Button(L("Cập nhật ngay"), action: updater.runUpdate).buttonStyle(.borderedProminent)
+                                        .help(Updater.sourceDir == nil ? L("Không tìm thấy thư mục mã nguồn — mở trang phát hành") : Updater.updateCommand)
+                                }
                             }
+                        }
+                        if let e = updater.updateError {
+                            Text(e).foregroundStyle(.red).font(.callout).lineLimit(4).textSelection(.enabled)
                         }
                     }
                     Toggle(L("Tự kiểm tra hằng ngày"), isOn: $updater.automatic)
@@ -123,7 +124,7 @@ struct SettingsPage: View {
                 } header: {
                     Text(L("Cập nhật"))
                 } footer: {
-                    Text(L("MacSentry build từ mã nguồn: nút Cập nhật mở Terminal chạy %@", Updater.updateCommand))
+                    Text(L("MacSentry build từ mã nguồn: Cập nhật sẽ chạy %@ rồi tự khởi động lại, cài đặt được giữ nguyên.", Updater.updateCommand))
                         .font(.callout).foregroundStyle(.secondary).textSelection(.enabled)
                 }
 
@@ -160,6 +161,7 @@ struct SettingsPage: View {
         form.token = cfg.botToken; form.chatId = cfg.chatId
         form.testOK = nil
         ui.flash(L("Đã lưu cấu hình Telegram"))
+        installer.telegramSaved()
     }
 
     func test() {
@@ -172,4 +174,31 @@ struct SettingsPage: View {
             }
         }
     }
+}
+
+/// Hàng "Cài / cập nhật daemon": cài ngay trong app (một hộp thoại mật khẩu), lệnh thủ công để dự phòng
+struct DaemonInstallRow: View {
+    @ObservedObject var ui: ViewState
+    @ObservedObject var installer = DaemonInstaller.shared
+
+    var body: some View {
+        let ok = !ui.components.isEmpty && ui.components.allSatisfy { $0.installed && $0.running }
+        LabeledContent(L("Cài / cập nhật daemon")) {
+            HStack {
+                if installer.running {
+                    ProgressView().controlSize(.small)
+                    Text(L("Đang cài…")).foregroundStyle(.secondary)
+                } else {
+                    if let e = installer.lastError { Text(e).foregroundStyle(.red).lineLimit(2) }
+                    Button { ui.copy(Store.daemonInstallCommand, L("Đã sao chép lệnh")) } label: { Image(systemName: "doc.on.doc") }
+                        .buttonStyle(.borderless).help(L("Sao chép lệnh cài thủ công: %@", Store.daemonInstallCommand))
+                    // Thiếu thành phần → nút tô màu nhấn; đang chạy đủ → nút thường "Cài lại"
+                    if ok { Button(L("Cài lại"), action: install).disabled(Updater.sourceDir == nil) }
+                    else { Button(L("Cài ngay"), action: install).buttonStyle(.borderedProminent).disabled(Updater.sourceDir == nil) }
+                }
+            }
+        }
+    }
+
+    func install() { installer.install { if $0 { ui.flash(L("Đã cài daemon")) } } }
 }

@@ -3,8 +3,8 @@ import Combine
 import UserNotifications
 
 // MARK: - Kiểm tra bản cập nhật qua GitHub Releases. MacSentry build từ mã nguồn (release không kèm file nhị phân),
-// nên "cập nhật" là chạy lại git pull + build.sh + daemon/install.sh trong thư mục mã nguồn — mở trong Terminal
-// để người dùng thấy lệnh và tự nhập mật khẩu sudo. App không tự tải hay thay file chạy.
+// nên "cập nhật" là git pull + build.sh trong thư mục mã nguồn, cài lại daemon (một hộp thoại mật khẩu), thay app
+// rồi tự khởi động lại. Cài đặt (UserDefaults, Telegram, /etc/macsentry.conf...) không bị đụng tới.
 
 final class Updater: ObservableObject {
     static let shared = Updater()
@@ -12,6 +12,7 @@ final class Updater: ObservableObject {
     static let releasesURL = URL(string: "https://github.com/vuminhhoa/macsentry/releases")!
     static let notificationID = "update"
     private static let autoKey = "autoCheckUpdates", lastKey = "lastUpdateCheck", notifiedKey = "notifiedUpdateVersion"
+    private static let updatedFromKey = "updatedFromVersion"
     /// Tự kiểm tra tối đa mỗi ngày một lần; đồng hồ chạy mỗi giờ để máy ngủ qua đêm vẫn kiểm tra sớm sau khi thức
     private static let interval: TimeInterval = 24 * 3600
 
@@ -26,6 +27,9 @@ final class Updater: ObservableObject {
     enum State { case idle, checking, upToDate, available(Release), failed(String) }
 
     @Published private(set) var state = State.idle
+    /// Bước đang chạy của lần cập nhật (nil = không cập nhật) và lỗi của lần gần nhất
+    @Published private(set) var step: String?
+    @Published private(set) var updateError: String?
     @Published private(set) var lastCheck: Date? = UserDefaults.standard.object(forKey: lastKey) as? Date
     /// Tự kiểm tra hằng ngày (mặc định bật)
     @Published var automatic = UserDefaults.standard.object(forKey: autoKey) as? Bool ?? true {
@@ -51,6 +55,16 @@ final class Updater: ObservableObject {
     }
 
     func start() {
+        // Vừa khởi động lại sau khi cập nhật → báo một lần
+        if let from = UserDefaults.standard.string(forKey: Self.updatedFromKey) {
+            UserDefaults.standard.removeObject(forKey: Self.updatedFromKey)
+            if from != Self.currentVersion {
+                let content = UNMutableNotificationContent()
+                content.title = L("Đã cập nhật MacSentry %@", Self.currentVersion)
+                content.body = L("Từ bản %@. Cài đặt được giữ nguyên.", from)
+                UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: "updated", content: content, trigger: nil))
+            }
+        }
         let t = Timer(timeInterval: 3600, repeats: true) { [weak self] _ in self?.checkIfDue() }
         t.tolerance = 300
         RunLoop.main.add(t, forMode: .common)
@@ -118,14 +132,61 @@ final class Updater: ObservableObject {
         UNUserNotificationCenter.current().add(UNNotificationRequest(identifier: Self.notificationID, content: content, trigger: nil))
     }
 
-    /// Mở Terminal chạy lệnh cập nhật. Dùng file .command (Terminal tự mở) thay cho AppleScript để không cần quyền Tự động hoá
+    /// Cập nhật một chạm: git pull → build → cài lại daemon → thay app → khởi động lại. Lỗi ở bước nào thì dừng ở đó,
+    /// app đang chạy không bị thay
     func runUpdate() {
-        guard Self.sourceDir != nil else { NSWorkspace.shared.open(available?.htmlURL ?? Self.releasesURL); return }
-        let script = Store.dir.appendingPathComponent("update.command")
-        let body = "#!/bin/bash\n# Tạo bởi MacSentry: cập nhật từ mã nguồn rồi cài lại daemon\nset -e\n\(Self.updateCommand)\n"
-        try? FileManager.default.removeItem(at: script)
-        guard FileManager.default.createFile(atPath: script.path, contents: Data(body.utf8), attributes: [.posixPermissions: 0o700])
-        else { return }
-        NSWorkspace.shared.open(script)
+        guard let dir = Self.sourceDir else { NSWorkspace.shared.open(available?.htmlURL ?? Self.releasesURL); return }
+        guard step == nil else { return }
+        updateError = nil
+        step = L("Đang tải mã nguồn…")
+        DispatchQueue.global(qos: .userInitiated).async {
+            let err = self.update(in: dir)
+            DispatchQueue.main.async {
+                self.step = nil
+                if let err { self.updateError = err } else { Self.relaunch() }
+            }
+        }
+    }
+
+    private func update(in dir: String) -> String? {
+        func setStep(_ s: String) { DispatchQueue.main.async { self.step = s } }
+        var r = Shell.run("/usr/bin/git", ["pull", "--ff-only"], in: dir)
+        guard r.ok else { return L("git pull lỗi: %@", r.tail) }
+        setStep(L("Đang build…"))
+        r = Shell.run(dir + "/build.sh", ["--no-install"], in: dir)
+        guard r.ok else { return L("Build lỗi: %@", r.tail) }
+        setStep(L("Đang cài daemon…"))
+        if let e = DaemonInstaller.runScript(dir) { return e }
+        setStep(L("Đang khởi động lại…"))
+        return Self.replaceApp(with: dir + "/build/MacSentry.app")
+    }
+
+    /// Thay bundle đang chạy bằng bản vừa build (copy ra bên cạnh rồi đổi chỗ, không có lúc nào thiếu app)
+    static func replaceApp(with built: String) -> String? {
+        let dest = URL(fileURLWithPath: Bundle.main.bundlePath).standardizedFileURL
+        let src = URL(fileURLWithPath: built).standardizedFileURL
+        guard dest != src else { return nil }
+        let fm = FileManager.default
+        let tmp = dest.deletingLastPathComponent().appendingPathComponent(".MacSentry-update.app")
+        do {
+            try? fm.removeItem(at: tmp)
+            try fm.copyItem(at: src, to: tmp)
+            _ = try fm.replaceItemAt(dest, withItemAt: tmp)
+        } catch { return error.localizedDescription }
+        // Như build.sh: bỏ bản trong build/ khỏi LaunchServices để hệ thống chỉ biết một app
+        let lsregister = "/System/Library/Frameworks/CoreServices.framework/Frameworks/LaunchServices.framework/Support/lsregister"
+        _ = Shell.run(lsregister, ["-u", src.path], in: "/")
+        _ = Shell.run(lsregister, ["-f", dest.path], in: "/")
+        return nil
+    }
+
+    /// Thoát mã lỗi để launchd (KeepAlive: SuccessfulExit = false) chạy lại ngay bản mới ở cùng đường dẫn.
+    /// Không qua applicationWillTerminate: không gửi tin "app đã bị tắt" cho một lần khởi động lại có chủ đích
+    static func relaunch() {
+        UserDefaults.standard.set(currentVersion, forKey: updatedFromKey)
+        UserDefaults.standard.synchronize()
+        Monitor.stopHelper()
+        if LaunchAtLogin.runningUnderLaunchd { exit(1) }
+        NSWorkspace.shared.openApplication(at: URL(fileURLWithPath: Bundle.main.bundlePath), configuration: .init()) { _, _ in exit(0) }
     }
 }

@@ -78,27 +78,23 @@ cd MacSentry
 ./build.sh                    # build, cài ~/Applications/MacSentry.app và chạy
 ```
 
-1. Mở **MacSentry → Cài đặt**, nhập bot token và chat ID, bấm gửi thử.
-2. Cài daemon và helper:
-
-   ```sh
-   sudo ./daemon/install.sh
-   ```
-
-   Trình cài hỏi bot riêng cho daemon (khuyên dùng), URL heartbeat (không bắt buộc), và có theo dõi lệnh được chạy
-   (exec) hay không.
+1. Lần đầu mở, app tự cài daemon và helper (`daemon/install.sh --auto`): macOS hỏi mật khẩu quản trị một lần,
+   không cần mở Terminal. Huỷ thì bấm **Cài ngay** ở mục **Thành phần giám sát** để cài lại.
+2. Mở **MacSentry → Cài đặt**, nhập bot token và chat ID, bấm gửi thử. Daemon được cài trước khi có Telegram thì app
+   tự cài lại để daemon dùng chung bot (lại hỏi mật khẩu một lần).
 3. Cấp **Full Disk Access** cho `/usr/local/libexec/macsentry-es` và `/usr/local/libexec/macsentryd`: Cài đặt hệ thống
    → Quyền riêng tư & Bảo mật → Truy cập toàn bộ ổ đĩa → **+** → <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd> rồi dán đường
    dẫn. Chưa cấp thì daemon sẽ nhắc qua Telegram.
 
-Đổi bot hoặc heartbeat của daemon: `sudo ./daemon/install.sh --reconfigure`.
+Bot riêng cho daemon (khuyên dùng), URL heartbeat, tắt theo dõi exec: `sudo ./daemon/install.sh --reconfigure`.
 
 > [!TIP]
 > Nếu keychain có chứng chỉ Apple Development, `build.sh` sẽ ký bằng chứng chỉ đó để macOS giữ quyền Mạng cục bộ và
 > Full Disk Access qua các lần build. Không có thì binary được ký ad-hoc, và phải cấp lại quyền sau mỗi lần build.
 
-**Cập nhật**: `git pull && ./build.sh && sudo ./daemon/install.sh`. App tự kiểm tra bản phát hành mới trên GitHub
-mỗi ngày và báo khi có; nút **Cài đặt › Cập nhật › Cập nhật…** mở Terminal chạy sẵn các lệnh này trong thư mục mã nguồn.
+**Cập nhật**: app tự kiểm tra bản phát hành mới trên GitHub mỗi ngày và báo khi có. Bấm **Cài đặt › Cập nhật ›
+Cập nhật ngay**: app chạy `git pull`, `./build.sh`, cài lại daemon (hỏi mật khẩu một lần), thay app rồi tự khởi động
+lại. Cài đặt và `/etc/macsentry.*` được giữ nguyên. Chạy tay: `git pull && ./build.sh && sudo ./daemon/install.sh`.
 
 **Gỡ cài đặt**: `./uninstall.sh` (gỡ daemon và app, giữ dữ liệu và log) hoặc `./uninstall.sh --purge` (xoá cả lịch sử,
 IP tin cậy, cấu hình Telegram). Log `/var/log/macsentry.log` có cờ chỉ-ghi-thêm. Muốn xoá thì chạy

@@ -100,20 +100,17 @@ cd MacSentry
 ./build.sh                    # builds and installs ~/Applications/MacSentry.app, then starts it
 ```
 
-1. Open **MacSentry → Settings**, enter the bot token and chat ID, and send a test message.
-2. Install the root components:
-
-   ```sh
-   sudo ./daemon/install.sh
-   ```
-
-   The installer asks for an optional separate bot for the daemon (recommended, see
-   [Security model](#security-model)), an optional heartbeat URL, and whether to monitor process execution.
+1. On first launch the app installs the daemon and helper itself (`daemon/install.sh --auto`): macOS asks for an
+   administrator password once, no Terminal needed. If you cancel, click **Install Now** under
+   **Monitoring Components**.
+2. Open **MacSentry → Settings**, enter the bot token and chat ID, and send a test message. If the daemon was
+   installed before Telegram was set up, the app reinstalls it so the daemon shares the app's bot (one more password prompt).
 3. Grant **Full Disk Access** to `/usr/local/libexec/macsentry-es` and `/usr/local/libexec/macsentryd`:
    System Settings → Privacy & Security → Full Disk Access → **+** → press <kbd>⌘</kbd><kbd>⇧</kbd><kbd>G</kbd>
    and paste the path. The daemon reminds you on Telegram until this is done.
 
-To change the daemon's bot or heartbeat later, run `sudo ./daemon/install.sh --reconfigure`.
+For a separate daemon bot (recommended, see [Security model](#security-model)), a heartbeat URL, or to turn off
+process execution monitoring, run `sudo ./daemon/install.sh --reconfigure`.
 
 > [!TIP]
 > If you have an Apple Development certificate in your keychain, `build.sh` signs with it, so macOS keeps
@@ -122,8 +119,9 @@ To change the daemon's bot or heartbeat later, run `sudo ./daemon/install.sh --r
 
 ### Updating
 
-The app checks GitHub for a new release once a day and notifies you. **Settings → Updates → Update…** opens
-Terminal and runs the commands below in the source folder; you can also run them yourself:
+The app checks GitHub for a new release once a day and notifies you. **Settings → Updates → Update Now** runs
+`git pull` and `./build.sh` in the source folder, reinstalls the daemon (one password prompt), replaces the app and
+restarts it. Your settings and `/etc/macsentry.*` are kept. To do it by hand:
 
 ```sh
 git pull
