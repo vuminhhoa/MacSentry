@@ -7,6 +7,21 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+## [1.2.0] - 2026-10-27
+
+### Added
+
+- The app installs the monitoring daemon by itself on first launch, with one administrator prompt and no
+  Terminal. **Monitoring Components** in Settings gets an **Install Now** / **Reinstall** button.
+- `daemon/install.sh --auto` runs without prompts (also used automatically when there is no terminal). It keeps
+  an existing `/etc/macsentry.conf` and, on a fresh install, reuses the app's Telegram bot.
+
+### Changed
+
+- **Update Now** updates in one click: it pulls and builds the source, reinstalls the daemon (one administrator
+  prompt), replaces the app and relaunches it, without opening Terminal. Settings, Telegram, history and
+  `/etc/macsentry.*` are kept.
+
 ## [1.1.0] - 2026-10-26
 
 ### Added
@@ -51,6 +66,7 @@ First public release.
 - The daemon masks Telegram bot tokens and secret values (`TOKEN=`, `PASSWORD:`...) in everything it writes to
   its world-readable log and sends to Telegram, including process command lines.
 
-[Unreleased]: https://github.com/vuminhhoa/macsentry/compare/v1.1.0...HEAD
+[Unreleased]: https://github.com/vuminhhoa/macsentry/compare/v1.2.0...HEAD
+[1.2.0]: https://github.com/vuminhhoa/macsentry/compare/v1.1.0...v1.2.0
 [1.1.0]: https://github.com/vuminhhoa/macsentry/compare/v1.0.0...v1.1.0
 [1.0.0]: https://github.com/vuminhhoa/macsentry/releases/tag/v1.0.0
