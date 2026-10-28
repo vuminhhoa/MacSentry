@@ -26,6 +26,10 @@ SRC_CONF="${TARGET_HOME:-/var/root}/Library/Application Support/MacSentry/telegr
 for b in "$ES_BIN" "$DAEMON_BIN"; do [ -x "$b" ] || { echo "Chưa có $b — chạy ./build.sh trước (không cần sudo)"; exit 1; }; done
 
 # ---- cấu hình: giữ file cũ (có thể đã có HEARTBEAT_URL, token riêng) trừ khi --reconfigure
+# Mỗi giá trị phải nằm gọn trên một dòng của /etc/macsentry.conf: một giá trị có xuống dòng (vd token trong
+# telegram.json của user) sẽ thêm dòng mới như ES_EXEC=0 hay HEARTBEAT_URL=... vào file cấu hình của root.
+valid_id() { [[ $1 =~ ^[A-Za-z0-9:_-]*$ ]]; }          # token bot, chat ID: chữ, số, : _ - (rỗng = chưa có)
+valid_url() { [[ $1 =~ ^[^[:space:][:cntrl:]]*$ ]]; }  # URL heartbeat: không khoảng trắng, không ký tự điều khiển
 app_telegram() { # đọc token và chat của app (rỗng nếu app chưa cấu hình Telegram)
   APP_TOKEN=""; CHAT=""
   [ -f "$SRC_CONF" ] || return 0
@@ -34,11 +38,15 @@ app_telegram() { # đọc token và chat của app (rỗng nếu app chưa cấu
 }
 if [ "$AUTO" = 1 ]; then
   app_telegram
+  if ! valid_id "$APP_TOKEN" || ! valid_id "$CHAT"; then
+    echo "Bỏ qua Telegram của app: token hoặc chat ID có ký tự không hợp lệ" >&2
+    APP_TOKEN=""; CHAT=""
+  fi
   if [ ! -f /etc/macsentry.conf ]; then
     # Chưa có Telegram thì daemon vẫn chạy và ghi log; app cài lại sau khi lưu Telegram
     ( umask 077; printf 'TOKEN=%s\nCHAT=%s\nHEARTBEAT_URL=\nES_EXEC=1\nFIM=auto\n' "$APP_TOKEN" "$CHAT" > /etc/macsentry.conf )
-  elif [ -n "$APP_TOKEN" ] && [[ "$APP_TOKEN$CHAT" =~ ^[A-Za-z0-9:_-]+$ ]] && grep -q '^TOKEN=$' /etc/macsentry.conf; then
-    # Token / chat ID hợp lệ chỉ gồm chữ, số, : _ - (đã kiểm ở trên) → dùng an toàn trong sed
+  elif [ -n "$APP_TOKEN" ] && grep -q '^TOKEN=$' /etc/macsentry.conf; then
+    # Token / chat ID chỉ gồm chữ, số, : _ - (valid_id ở trên) → dùng an toàn trong sed
     sed -i '' -e "s|^TOKEN=\$|TOKEN=$APP_TOKEN|" -e "s|^CHAT=.*|CHAT=$CHAT|" /etc/macsentry.conf
   fi
 elif [ ! -f /etc/macsentry.conf ] || [ "$RECONFIGURE" = 1 ]; then
@@ -56,6 +64,8 @@ elif [ ! -f /etc/macsentry.conf ] || [ "$RECONFIGURE" = 1 ]; then
   echo "trên máy chạy nhiều tiến trình (IDE, build). Tắt thì vẫn còn các giám sát khác."
   read -r -p "Bật theo dõi exec? [Y/n]: " ES_EXEC_ANS
   case $ES_EXEC_ANS in [nN]*) ES_EXEC=0 ;; *) ES_EXEC=1 ;; esac
+  valid_id "$TOKEN" && valid_id "$CHAT" || { echo "Token hoặc chat ID chỉ được gồm chữ, số, : _ -" >&2; exit 1; }
+  valid_url "$HEARTBEAT_URL" || { echo "URL heartbeat không được có khoảng trắng" >&2; exit 1; }
   # FIM=auto: file nhạy cảm mà Wazuh syscheck đã theo dõi thời gian thực thì để Wazuh lo; FIM=local: MacSentry tự theo dõi hết
   ( umask 077; printf 'TOKEN=%s\nCHAT=%s\nHEARTBEAT_URL=%s\nES_EXEC=%s\nFIM=auto\n' "$TOKEN" "$CHAT" "$HEARTBEAT_URL" "$ES_EXEC" > /etc/macsentry.conf )
 fi
