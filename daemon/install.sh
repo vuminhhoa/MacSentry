@@ -64,7 +64,7 @@ elif [ ! -f /etc/macsentry.conf ] || [ "$RECONFIGURE" = 1 ]; then
   echo "trên máy chạy nhiều tiến trình (IDE, build). Tắt thì vẫn còn các giám sát khác."
   read -r -p "Bật theo dõi exec? [Y/n]: " ES_EXEC_ANS
   case $ES_EXEC_ANS in [nN]*) ES_EXEC=0 ;; *) ES_EXEC=1 ;; esac
-  valid_id "$TOKEN" && valid_id "$CHAT" || { echo "Token hoặc chat ID chỉ được gồm chữ, số, : _ -" >&2; exit 1; }
+  if ! valid_id "$TOKEN" || ! valid_id "$CHAT"; then echo "Token hoặc chat ID chỉ được gồm chữ, số, : _ -" >&2; exit 1; fi
   valid_url "$HEARTBEAT_URL" || { echo "URL heartbeat không được có khoảng trắng" >&2; exit 1; }
   # FIM=auto: file nhạy cảm mà Wazuh syscheck đã theo dõi thời gian thực thì để Wazuh lo; FIM=local: MacSentry tự theo dõi hết
   ( umask 077; printf 'TOKEN=%s\nCHAT=%s\nHEARTBEAT_URL=%s\nES_EXEC=%s\nFIM=auto\n' "$TOKEN" "$CHAT" "$HEARTBEAT_URL" "$ES_EXEC" > /etc/macsentry.conf )
