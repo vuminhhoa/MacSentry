@@ -7,6 +7,13 @@ The format is based on [Keep a Changelog](https://keepachangelog.com/en/1.1.0/),
 
 ## [Unreleased]
 
+### Security
+
+- `daemon/install.sh` validates the Telegram token, chat ID and heartbeat URL before writing a new
+  `/etc/macsentry.conf`, not only before the `sed` that fills an existing one. A value with a newline, for
+  example in the user's `telegram.json`, could add lines such as `ES_EXEC=0` to the root-owned config. With
+  `--auto`, invalid app values are skipped (the daemon starts without Telegram); interactively, the script stops.
+
 ## [1.2.0] - 2026-10-27
 
 ### Added
